@@ -22,9 +22,9 @@ router.post("/setup", async (req, res) => {
       return;
     }
 
-    const storeId  = genId();
-    const userId   = genId();
-    const ts       = now();
+    const storeId   = genId();
+    const userId    = genId();
+    const ts        = now();
     const pinHashed = hashPin(pin);
 
     await db.insert(storesTable).values({
@@ -62,41 +62,48 @@ router.post("/setup", async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Login with storeId + PIN.
+ * Login with email + PIN — finds the user across all stores automatically.
  */
 router.post("/login", async (req, res) => {
   try {
-    const { storeId, pin } = req.body as { storeId: string; pin: string };
+    const { email, pin } = req.body as { email: string; pin: string };
 
-    if (!storeId || !pin) {
-      res.status(400).json({ error: "storeId and pin are required" });
+    if (!email || !pin) {
+      res.status(400).json({ error: "email and pin are required" });
       return;
     }
 
+    // Find user by email (case-insensitive)
     const users = await db
       .select()
       .from(usersTable)
-      .where(and(eq(usersTable.storeId, storeId), eq(usersTable.isActive, true)));
+      .where(and(eq(usersTable.isActive, true)));
 
+    // Find the user with matching email + PIN
     let matchedUser = null;
     for (const u of users) {
-      if (u.pinHash && verifyPin(pin, u.pinHash)) {
+      if (u.email.toLowerCase() === email.toLowerCase() && u.pinHash && verifyPin(pin, u.pinHash)) {
         matchedUser = u;
         break;
       }
     }
 
     if (!matchedUser) {
-      res.status(401).json({ error: "Incorrect PIN" });
+      res.status(401).json({ error: "Incorrect email or PIN" });
       return;
     }
 
-    const store = await db.select().from(storesTable).where(eq(storesTable.id, storeId)).get();
+    const store = await db.select().from(storesTable).where(eq(storesTable.id, matchedUser.storeId)).get();
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
+
+    if (!store.isActive) {
+      res.status(403).json({ error: "This store has been deactivated. Contact admin." });
+      return;
+    }
 
     const token = signToken({
       userId: matchedUser.id,
-      storeId,
+      storeId: matchedUser.storeId,
       role: matchedUser.role,
       name: matchedUser.name,
     });

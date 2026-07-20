@@ -29,6 +29,7 @@ sqlite.exec(`
     language    TEXT NOT NULL DEFAULT 'en',
     theme       TEXT NOT NULL DEFAULT 'light',
     is_active   INTEGER NOT NULL DEFAULT 1,
+    plan_expiry TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
   );
@@ -147,5 +148,8 @@ sqlite.exec(`
     created_at TEXT NOT NULL
   );
 `);
+
+// ── Migrate existing databases (add new columns safely) ─────────────────────
+try { sqlite.exec("ALTER TABLE stores ADD COLUMN plan_expiry TEXT"); } catch {}
 
 export * from "./schema";

@@ -16,6 +16,7 @@ export const storesTable = sqliteTable("stores", {
   language:   text("language").notNull().default("en"),
   theme:      text("theme").notNull().default("light"),
   isActive:   integer("is_active", { mode: "boolean" }).notNull().default(true),
+  planExpiry: text("plan_expiry"),
   createdAt:  text("created_at").notNull(),
   updatedAt:  text("updated_at").notNull(),
 });

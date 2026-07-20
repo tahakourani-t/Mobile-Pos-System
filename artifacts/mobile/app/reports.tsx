@@ -19,56 +19,118 @@ export default function ReportsScreen() {
   const [period, setPeriod] = useState<Period>('today');
   const [sendingReport, setSendingReport] = useState(false);
 
+  const now = useMemo(() => new Date(), []);
+
   const filtered = useMemo(() => {
-    const now = new Date();
     return orders.filter(o => {
       if (o.status !== 'completed') return false;
       const d = new Date(o.createdAt);
-      if (period === 'today') return d.toDateString() === now.toDateString();
-      if (period === 'week') return d >= new Date(now.getTime() - 7 * 86400000);
-      if (period === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      if (period === 'today')  return d.toDateString() === now.toDateString();
+      if (period === 'week')   return d >= new Date(now.getTime() - 7 * 86400000);
+      if (period === 'month')  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       return d.getFullYear() === now.getFullYear();
     });
-  }, [orders, period]);
+  }, [orders, period, now]);
 
-  const todayOrders = useMemo(() => {
-    const now = new Date();
-    return orders.filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === now.toDateString());
-  }, [orders]);
+  const todayOrders = useMemo(() =>
+    orders.filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === now.toDateString()),
+  [orders, now]);
 
-  const totalSales   = filtered.reduce((s, o) => s + o.total, 0);
-  const totalProfit  = filtered.reduce((s, o) => s + o.items.reduce((p, i) => p + (i.product.price - i.product.purchasePrice) * i.quantity, 0), 0);
-  const totalDiscount= filtered.reduce((s, o) => s + o.discountAmount, 0);
-  const orderCount   = filtered.length;
-  const avgOrder     = orderCount > 0 ? totalSales / orderCount : 0;
+  const totalSales    = filtered.reduce((s, o) => s + o.total, 0);
+  const totalProfit   = filtered.reduce((s, o) => s + o.items.reduce((p, i) => p + (i.product.price - i.product.purchasePrice) * i.quantity, 0), 0);
+  const totalDiscount = filtered.reduce((s, o) => s + o.discountAmount, 0);
+  const orderCount    = filtered.length;
+  const avgOrder      = orderCount > 0 ? totalSales / orderCount : 0;
 
   const productSales: Record<string, { name: string; nameAr?: string; qty: number; revenue: number }> = {};
   filtered.forEach(o => o.items.forEach(i => {
     if (!productSales[i.product.id]) productSales[i.product.id] = { name: i.product.name, nameAr: i.product.nameAr, qty: 0, revenue: 0 };
-    productSales[i.product.id].qty += i.quantity;
-    productSales[i.product.id].revenue += i.product.price * i.quantity;
+    productSales[i.product.id]!.qty     += i.quantity;
+    productSales[i.product.id]!.revenue += i.product.price * i.quantity;
   }));
   const topProducts = Object.values(productSales).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
 
   const payBreakdown = { cash: 0, card: 0, custom: 0 };
   filtered.forEach(o => { (payBreakdown as any)[o.paymentMethod] += o.total; });
 
+  // ── Period-aware chart data ──────────────────────────────────────────────
   const chartData: WeeklySalesPoint[] = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const daySales = orders.filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === d.toDateString()).reduce((s, o) => s + o.total, 0);
-      return { day: days[d.getDay()], sales: daySales || 0 };
-    });
-  }, [orders]);
-
-  const sendDailyReport = async () => {
-    if (!storeSettings.phone) {
-      Alert.alert(t('warning'), t('noPhoneSet'));
-      return;
+    if (period === 'today') {
+      // 6 four-hour slots: 00–04, 04–08, 08–12, 12–16, 16–20, 20–24
+      return Array.from({ length: 6 }, (_, i) => {
+        const label = `${String(i * 4).padStart(2, '0')}h`;
+        const sales = orders
+          .filter(o => {
+            if (o.status !== 'completed') return false;
+            const d = new Date(o.createdAt);
+            if (d.toDateString() !== now.toDateString()) return false;
+            return d.getHours() >= i * 4 && d.getHours() < (i + 1) * 4;
+          })
+          .reduce((s, o) => s + o.total, 0);
+        return { day: label, sales };
+      });
     }
 
+    if (period === 'week') {
+      // Last 7 days
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - (6 - i));
+        const dayStr = d.toDateString();
+        const sales = orders
+          .filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === dayStr)
+          .reduce((s, o) => s + o.total, 0);
+        return { day: days[d.getDay()]!, sales };
+      });
+    }
+
+    if (period === 'month') {
+      // Last 4 weeks (week 1 = oldest)
+      return Array.from({ length: 4 }, (_, i) => {
+        const weekEnd   = new Date(now.getTime() - (3 - i) * 7 * 86400000);
+        const weekStart = new Date(weekEnd.getTime() - 6 * 86400000);
+        const sales = orders
+          .filter(o => {
+            if (o.status !== 'completed') return false;
+            const d = new Date(o.createdAt);
+            return d >= weekStart && d <= weekEnd;
+          })
+          .reduce((s, o) => s + o.total, 0);
+        return { day: `W${i + 1}`, sales };
+      });
+    }
+
+    // Year: 12 months
+    const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return Array.from({ length: 12 }, (_, i) => {
+      const sales = orders
+        .filter(o => {
+          if (o.status !== 'completed') return false;
+          const d = new Date(o.createdAt);
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === i;
+        })
+        .reduce((s, o) => s + o.total, 0);
+      return { day: monthAbbr[i]!, sales };
+    });
+  }, [orders, period, now]);
+
+  const chartHighlightIndex = useMemo(() => {
+    if (period === 'today')  return new Date().getHours() < 4 ? 0 : Math.floor(new Date().getHours() / 4);
+    if (period === 'week')   return 6;
+    if (period === 'month')  return 3;
+    return now.getMonth();
+  }, [period, now]);
+
+  const chartTitle: Record<Period, string> = {
+    today: "Today's Hourly Breakdown",
+    week:  '7-Day Sales Trend',
+    month: '4-Week Breakdown',
+    year:  'Monthly Breakdown',
+  };
+
+  const sendDailyReport = async () => {
+    if (!storeSettings.phone) { Alert.alert(t('warning'), t('noPhoneSet')); return; }
     setSendingReport(true);
     try {
       const today = new Date().toLocaleDateString(lang === 'ar' ? 'ar-LB' : 'en-LB', {
@@ -76,83 +138,37 @@ export default function ReportsScreen() {
       });
       const cur = storeSettings.currency;
       const storeName = storeSettings.name || 'POS Store';
-
-      // Build top products list
       const todayProductSales: Record<string, { name: string; nameAr?: string; qty: number; revenue: number }> = {};
       todayOrders.forEach(o => o.items.forEach(i => {
         if (!todayProductSales[i.product.id]) todayProductSales[i.product.id] = { name: i.product.name, nameAr: i.product.nameAr, qty: 0, revenue: 0 };
-        todayProductSales[i.product.id].qty += i.quantity;
-        todayProductSales[i.product.id].revenue += i.product.price * i.quantity;
+        todayProductSales[i.product.id]!.qty     += i.quantity;
+        todayProductSales[i.product.id]!.revenue += i.product.price * i.quantity;
       }));
       const todayTop = Object.values(todayProductSales).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-
-      const todaySalesTotal = todayOrders.reduce((s, o) => s + o.total, 0);
+      const todaySalesTotal  = todayOrders.reduce((s, o) => s + o.total, 0);
       const todayProfitTotal = todayOrders.reduce((s, o) => s + o.items.reduce((p, i) => p + (i.product.price - i.product.purchasePrice) * i.quantity, 0), 0);
-      const todayCash = todayOrders.filter(o => o.paymentMethod === 'cash').reduce((s, o) => s + o.total, 0);
-      const todayCard = todayOrders.filter(o => o.paymentMethod === 'card').reduce((s, o) => s + o.total, 0);
+      const todayCash        = todayOrders.filter(o => o.paymentMethod === 'cash').reduce((s, o) => s + o.total, 0);
+      const todayCard        = todayOrders.filter(o => o.paymentMethod === 'card').reduce((s, o) => s + o.total, 0);
 
       let message: string;
-
       if (lang === 'ar') {
-        const topList = todayTop.map((p, i) =>
-          `${i + 1}. ${p.nameAr || p.name} — ${p.qty} وحدة — ${cur} ${p.revenue.toLocaleString()}`
-        ).join('\n');
-
-        message = `📊 *التقرير اليومي — ${storeName}*
-📅 ${today}
-
-━━━━━━━━━━━━━━━━━━
-💰 إجمالي المبيعات: *${cur} ${todaySalesTotal.toLocaleString()}*
-📦 عدد الفواتير: *${todayOrders.length}*
-📈 الربح الصافي: *${cur} ${todayProfitTotal.toLocaleString()}*
-💵 نقداً: ${cur} ${todayCash.toLocaleString()}
-💳 بطاقة: ${cur} ${todayCard.toLocaleString()}
-
-━━━━━━━━━━━━━━━━━━
-🏆 *أكثر المنتجات مبيعاً:*
-${todayTop.length > 0 ? topList : 'لا توجد مبيعات اليوم'}
-
-━━━━━━━━━━━━━━━━━━
-📱 تم التوليد بواسطة POS Mobile`;
+        const topList = todayTop.map((p, i) => `${i + 1}. ${p.nameAr || p.name} — ${p.qty} وحدة — ${cur} ${p.revenue.toLocaleString()}`).join('\n');
+        message = `📊 *التقرير اليومي — ${storeName}*\n📅 ${today}\n\n━━━━━━━━━━━━━━━━━━\n💰 إجمالي المبيعات: *${cur} ${todaySalesTotal.toLocaleString()}*\n📦 عدد الفواتير: *${todayOrders.length}*\n📈 الربح الصافي: *${cur} ${todayProfitTotal.toLocaleString()}*\n💵 نقداً: ${cur} ${todayCash.toLocaleString()}\n💳 بطاقة: ${cur} ${todayCard.toLocaleString()}\n\n━━━━━━━━━━━━━━━━━━\n🏆 *أكثر المنتجات مبيعاً:*\n${todayTop.length > 0 ? topList : 'لا توجد مبيعات اليوم'}\n\n━━━━━━━━━━━━━━━━━━\n📱 تم التوليد بواسطة POS Mobile`;
       } else {
-        const topList = todayTop.map((p, i) =>
-          `${i + 1}. ${p.name} — ${p.qty} units — ${cur} ${p.revenue.toLocaleString()}`
-        ).join('\n');
-
-        message = `📊 *Daily Report — ${storeName}*
-📅 ${today}
-
-━━━━━━━━━━━━━━━━━━
-💰 Total Sales: *${cur} ${todaySalesTotal.toLocaleString()}*
-📦 Orders Count: *${todayOrders.length}*
-📈 Net Profit: *${cur} ${todayProfitTotal.toLocaleString()}*
-💵 Cash: ${cur} ${todayCash.toLocaleString()}
-💳 Card: ${cur} ${todayCard.toLocaleString()}
-
-━━━━━━━━━━━━━━━━━━
-🏆 *Top Selling Products:*
-${todayTop.length > 0 ? topList : 'No sales today'}
-
-━━━━━━━━━━━━━━━━━━
-📱 Generated by POS Mobile`;
+        const topList = todayTop.map((p, i) => `${i + 1}. ${p.name} — ${p.qty} units — ${cur} ${p.revenue.toLocaleString()}`).join('\n');
+        message = `📊 *Daily Report — ${storeName}*\n📅 ${today}\n\n━━━━━━━━━━━━━━━━━━\n💰 Total Sales: *${cur} ${todaySalesTotal.toLocaleString()}*\n📦 Orders Count: *${todayOrders.length}*\n📈 Net Profit: *${cur} ${todayProfitTotal.toLocaleString()}*\n💵 Cash: ${cur} ${todayCash.toLocaleString()}\n💳 Card: ${cur} ${todayCard.toLocaleString()}\n\n━━━━━━━━━━━━━━━━━━\n🏆 *Top Selling Products:*\n${todayTop.length > 0 ? topList : 'No sales today'}\n\n━━━━━━━━━━━━━━━━━━\n📱 Generated by POS Mobile`;
       }
-
-      // Strip + from phone number for wa.me
       const phoneNum = storeSettings.phone.replace(/[^0-9]/g, '');
-      const url = `https://wa.me/${phoneNum}?text=${encodeURIComponent(message)}`;
-      await Linking.openURL(url);
-    } catch (e) {
-      Alert.alert(t('error'), 'Could not open WhatsApp.');
-    } finally {
-      setSendingReport(false);
-    }
+      await Linking.openURL(`https://wa.me/${phoneNum}?text=${encodeURIComponent(message)}`);
+    } catch { Alert.alert(t('error'), 'Could not open WhatsApp.'); }
+    finally  { setSendingReport(false); }
   };
 
   const periods = [
     { key: 'today' as Period, label: t('today') },
-    { key: 'week'  as Period, label: t('week') },
+    { key: 'week'  as Period, label: t('week')  },
     { key: 'month' as Period, label: t('month') },
-    { key: 'year'  as Period, label: t('year') },
+    { key: 'year'  as Period, label: t('year')  },
   ];
   const cur = storeSettings.currency;
 
@@ -161,14 +177,11 @@ ${todayTop.length > 0 ? topList : 'No sales today'}
       <AppHeader title={t('reports')} />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Platform.OS === 'web' ? 34 : 100 }]} showsVerticalScrollIndicator={false}>
 
-        {/* Daily Report WhatsApp Button */}
+        {/* WhatsApp daily report */}
         <TouchableOpacity
           onPress={sendDailyReport}
           disabled={sendingReport}
-          style={[styles.dailyReportBtn, {
-            backgroundColor: sendingReport ? colors.muted : '#25D366',
-            borderRadius: colors.radius,
-          }]}
+          style={[styles.dailyReportBtn, { backgroundColor: sendingReport ? colors.muted : '#25D366', borderRadius: colors.radius }]}
           activeOpacity={0.85}
         >
           <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
@@ -180,21 +193,25 @@ ${todayTop.length > 0 ? topList : 'No sales today'}
         {/* Period selector */}
         <View style={[styles.periodRow, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
           {periods.map(p => (
-            <TouchableOpacity key={p.key} onPress={() => setPeriod(p.key)} style={[styles.periodBtn, { backgroundColor: period === p.key ? colors.primary : 'transparent', borderRadius: colors.radius - 4 }]}>
+            <TouchableOpacity
+              key={p.key}
+              onPress={() => setPeriod(p.key)}
+              style={[styles.periodBtn, { backgroundColor: period === p.key ? colors.primary : 'transparent', borderRadius: colors.radius - 4 }]}
+            >
               <Text style={[styles.periodLabel, { color: period === p.key ? '#FFFFFF' : colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{p.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Stats */}
+        {/* Stats grid */}
         <View style={styles.statsGrid}>
           {[
-            { label: t('revenue'),   value: `${cur} ${totalSales.toLocaleString()}`,   icon: 'cash-outline' as const,       color: colors.primary },
-            { label: t('orders'),    value: String(orderCount),                          icon: 'receipt-outline' as const,    color: colors.info },
-            { label: t('profit'),    value: `${cur} ${totalProfit.toLocaleString()}`,   icon: 'trending-up-outline' as const, color: colors.success },
-            { label: t('avgOrder'),  value: `${cur} ${avgOrder.toLocaleString()}`,      icon: 'stats-chart-outline' as const, color: '#8B5CF6' },
-            { label: t('discounts'), value: `${cur} ${totalDiscount.toLocaleString()}`, icon: 'pricetag-outline' as const,   color: colors.warning },
-            { label: t('products'),  value: String(products.length),                    icon: 'cube-outline' as const,       color: '#EC4899' },
+            { label: t('revenue'),   value: `${cur} ${totalSales.toLocaleString()}`,   icon: 'cash-outline' as const,        color: colors.primary },
+            { label: t('orders'),    value: String(orderCount),                          icon: 'receipt-outline' as const,     color: colors.info },
+            { label: t('profit'),    value: `${cur} ${totalProfit.toLocaleString()}`,   icon: 'trending-up-outline' as const,  color: colors.success },
+            { label: t('avgOrder'),  value: `${cur} ${avgOrder.toLocaleString()}`,      icon: 'stats-chart-outline' as const,  color: '#8B5CF6' },
+            { label: t('discounts'), value: `${cur} ${totalDiscount.toLocaleString()}`, icon: 'pricetag-outline' as const,    color: colors.warning },
+            { label: t('products'),  value: String(products.length),                    icon: 'cube-outline' as const,        color: '#EC4899' },
           ].map(s => (
             <View key={s.label} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <View style={[styles.statIcon, { backgroundColor: s.color + '18', borderRadius: 10 }]}>
@@ -206,10 +223,18 @@ ${todayTop.length > 0 ? topList : 'No sales today'}
           ))}
         </View>
 
-        {/* 7-day trend */}
+        {/* Period chart */}
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('sevenDayTrend')}</Text>
-          <SimpleChart data={chartData} height={90} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+            {chartTitle[period]}
+          </Text>
+          {chartData.every(d => d.sales === 0) ? (
+            <Text style={[styles.noData, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
+              {t('noSalesThisPeriod')}
+            </Text>
+          ) : (
+            <SimpleChart data={chartData} highlightIndex={chartHighlightIndex} height={90} />
+          )}
         </View>
 
         {/* Payment methods */}
@@ -264,17 +289,10 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { padding: 16, gap: 14 },
   dailyReportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, paddingVertical: 14, paddingHorizontal: 20,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 }, elevation: 4,
   },
   dailyReportText: { fontSize: 15, color: '#FFFFFF' },
   periodRow: { flexDirection: 'row', padding: 4, borderWidth: 1, gap: 4 },
@@ -287,13 +305,13 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12 },
   section: { padding: 16, borderWidth: 1, gap: 12 },
   sectionTitle: { fontSize: 16 },
+  noData: { fontSize: 14, textAlign: 'center', paddingVertical: 10 },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   payIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   payLabel: { fontSize: 14, width: 48 },
   payBar: { height: 8 },
   payBarFill: { height: '100%' },
   payValue: { fontSize: 13, width: 36, textAlign: 'right' },
-  noData: { fontSize: 14, textAlign: 'center', paddingVertical: 10 },
   topRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 },
   rank: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   rankText: { fontSize: 12 },

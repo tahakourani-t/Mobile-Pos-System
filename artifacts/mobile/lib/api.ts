@@ -2,15 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'auth_token';
 
-// Base URL: the API server is routed at /api on the same domain as the mobile app
 function getBase(): string {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}`;
-  // Fallback for local dev
   return 'http://localhost:8080';
 }
 
-// ── Token management ────────────────────────────────────────────────────────
+// ── Token management ─────────────────────────────────────────────────────────
 
 let _token: string | null = null;
 
@@ -34,9 +32,10 @@ export async function clearToken(): Promise<void> {
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
+  overrideToken?: string,
 ): Promise<T> {
   const url = `${getBase()}${path}`;
-  const token = _token ?? (await loadToken());
+  const token = overrideToken ?? _token ?? (await loadToken());
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -88,6 +87,8 @@ export interface ApiStore {
   taxRate: number;
   language: string;
   theme: string;
+  isActive: boolean;
+  planExpiry?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -100,18 +101,41 @@ export interface StoreProfile {
 }
 
 export const auth = {
-  /** Get all registered stores on this server (for the store picker) */
   listStores: () => apiFetch<StoreProfile[]>('/api/auth/stores'),
 
-  /** First-time setup: creates the store + admin user */
   setup: (body: {
     storeName: string; phone: string; email?: string;
     address?: string; currency?: string; logoUri?: string; language?: string; pin: string;
   }) => apiFetch<AuthResult>('/api/auth/setup', { method: 'POST', body: JSON.stringify(body) }),
 
-  /** Login with store id + PIN */
-  login: (storeId: string, pin: string) =>
-    apiFetch<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ storeId, pin }) }),
+  /** Login with email + PIN — server auto-detects the store */
+  login: (email: string, pin: string) =>
+    apiFetch<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, pin }) }),
+};
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export interface AdminAuthResult {
+  token: string;
+  role: string;
+}
+
+export const admin = {
+  login: (email: string, pin: string) =>
+    apiFetch<AdminAuthResult>('/api/admin/auth', { method: 'POST', body: JSON.stringify({ email, pin }) }),
+
+  listStores: (adminToken: string) =>
+    apiFetch<ApiStore[]>('/api/admin/stores', {}, adminToken),
+
+  activate: (storeId: string, duration: '1month' | '1year', adminToken: string) =>
+    apiFetch<ApiStore>(`/api/admin/stores/${storeId}/activate`, {
+      method: 'POST', body: JSON.stringify({ duration }),
+    }, adminToken),
+
+  deactivate: (storeId: string, adminToken: string) =>
+    apiFetch<ApiStore>(`/api/admin/stores/${storeId}/deactivate`, {
+      method: 'POST', body: JSON.stringify({}),
+    }, adminToken),
 };
 
 // ── Stores ────────────────────────────────────────────────────────────────────

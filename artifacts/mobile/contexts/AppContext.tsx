@@ -26,7 +26,8 @@ interface AppContextType {
   isAuthenticated: boolean;
   activeStoreId: string | null;
   user: AppUser | null;
-  login: (storeId: string, pin: string) => Promise<boolean>;
+  /** Login with email + PIN — server resolves the store automatically */
+  login: (email: string, pin: string) => Promise<boolean>;
   logout: () => Promise<void>;
 
   // Store profiles (for the store-picker on login screen)
@@ -49,7 +50,7 @@ interface AppContextType {
   isOnboardingComplete: boolean;
   completeOnboarding: (storeId: string, pin: string, settings: Partial<StoreSettings>) => Promise<void>;
 
-  // Trial
+  // Plan / Trial
   trialDaysLeft: number;
   trialExpired: boolean;
 
@@ -60,15 +61,8 @@ interface AppContextType {
 const TRIAL_DAYS = 14;
 
 const defaultSettings: StoreSettings = {
-  name: '',
-  address: '',
-  phone: '',
-  email: '',
-  vatNumber: '',
-  currency: 'LBP',
-  taxRate: 0,
-  language: 'en',
-  theme: 'light',
+  name: '', address: '', phone: '', email: '',
+  vatNumber: '', currency: 'LBP', taxRate: 0, language: 'en', theme: 'light',
 };
 
 const AppContext = createContext<AppContextType>({} as AppContextType);
@@ -81,7 +75,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [storeProfiles, setStoreProfiles]     = useState<StoreProfile[]>([]);
   const [notifications, setNotifications]     = useState<NotificationItem[]>([]);
   const [storeSettings, setStoreSettings]     = useState<StoreSettings>(defaultSettings);
-  const [trialStart, setTrialStart]           = useState<string | null>(null);
+
+  // Server-driven plan fields
+  const [storeCreatedAt, setStoreCreatedAt]   = useState<string | null>(null);
+  const [planExpiry, setPlanExpiry]           = useState<string | null>(null);
+  const [storeIsActive, setStoreIsActive]     = useState<boolean>(true);
 
   // ── Hydrate on mount ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -89,7 +87,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         await api.loadToken();
         await refreshStoreProfiles();
-        // Restore previous session
         const savedStoreId = await AsyncStorage.getItem('active_store_id');
         const savedUser    = await AsyncStorage.getItem('current_user');
         const savedToken   = await AsyncStorage.getItem('auth_token');
@@ -99,7 +96,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setActiveStoreId(savedStoreId);
           setIsAuthenticated(true);
           await _loadStoreSettings(savedStoreId);
-          await _loadNotifications(savedStoreId);
+          await _loadNotifications();
         }
       } catch {}
       setHydrated(true);
@@ -110,13 +107,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const list = await api.auth.listStores();
       setStoreProfiles(list.map(s => ({
-        storeId: s.id,
-        name: s.name,
-        logoUri: s.logoUrl,
-        createdAt: s.createdAt,
+        storeId: s.id, name: s.name,
+        logoUri: s.logoUrl, createdAt: s.createdAt,
       })));
     } catch {
-      // Server not reachable — fall back to empty list
       setStoreProfiles([]);
     }
   };
@@ -139,13 +133,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setStoreSettings(settings);
       applyRTL(settings.language);
 
-      // Store trial info in AsyncStorage (local only, not on server)
-      const trialRaw = await AsyncStorage.getItem(`store_trial_${storeId}`);
-      setTrialStart(trialRaw ?? store.createdAt);
+      // Store plan info from the server (source of truth)
+      setStoreCreatedAt(store.createdAt);
+      setPlanExpiry(store.planExpiry ?? null);
+      setStoreIsActive(store.isActive ?? true);
     } catch {}
   };
 
-  const _loadNotifications = async (storeId: string) => {
+  const _loadNotifications = async () => {
     try {
       const list = await api.notifications.list();
       setNotifications(list.map(n => ({
@@ -162,9 +157,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const login = async (storeId: string, pin: string): Promise<boolean> => {
+  const login = async (email: string, pin: string): Promise<boolean> => {
     try {
-      const result = await api.auth.login(storeId, pin);
+      const result = await api.auth.login(email, pin);
       await api.saveToken(result.token);
       const u: AppUser = {
         id: result.user.id, name: result.user.name,
@@ -172,20 +167,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         storeId: result.user.storeId,
       };
       setUser(u);
-      setActiveStoreId(storeId);
+      setActiveStoreId(result.user.storeId);
       setIsAuthenticated(true);
-      await AsyncStorage.setItem('active_store_id', storeId);
+      await AsyncStorage.setItem('active_store_id', result.user.storeId);
       await AsyncStorage.setItem('current_user', JSON.stringify(u));
 
-      // Set trial start if not set
-      const trialRaw = await AsyncStorage.getItem(`store_trial_${storeId}`);
-      if (!trialRaw) {
-        await AsyncStorage.setItem(`store_trial_${storeId}`, result.store.createdAt);
-      }
-      setTrialStart(trialRaw ?? result.store.createdAt);
+      // Capture plan info straight from the login response
+      setStoreCreatedAt(result.store.createdAt);
+      setPlanExpiry(result.store.planExpiry ?? null);
+      setStoreIsActive(result.store.isActive ?? true);
 
-      await _loadStoreSettings(storeId);
-      await _loadNotifications(storeId);
+      await _loadStoreSettings(result.user.storeId);
+      await _loadNotifications();
       return true;
     } catch {
       return false;
@@ -198,6 +191,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setUser(null);
     setNotifications([]);
+    setPlanExpiry(null);
+    setStoreIsActive(true);
   };
 
   // ── Onboarding / store creation ───────────────────────────────────────────
@@ -225,8 +220,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     await AsyncStorage.setItem('active_store_id', result.store.id);
     await AsyncStorage.setItem('current_user', JSON.stringify(u));
-    await AsyncStorage.setItem(`store_trial_${result.store.id}`, result.store.createdAt);
-    setTrialStart(result.store.createdAt);
+
+    setStoreCreatedAt(result.store.createdAt);
+    setPlanExpiry(result.store.planExpiry ?? null);
+    setStoreIsActive(result.store.isActive ?? true);
 
     const s: StoreSettings = {
       name: result.store.name, address: result.store.address ?? '',
@@ -237,7 +234,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     setStoreSettings(s);
     applyRTL(s.language);
-
     await refreshStoreProfiles();
   };
 
@@ -253,14 +249,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       logoUrl: (updated as any).logoUri,
     });
     if (s.language) applyRTL(s.language);
-    // Refresh store profile list (name may have changed)
     await refreshStoreProfiles();
   };
 
   // ── Notifications ────────────────────────────────────────────────────────
   const refreshNotifications = async () => {
     if (!activeStoreId) return;
-    await _loadNotifications(activeStoreId);
+    await _loadNotifications();
   };
 
   const markRead = async (id: string) => {
@@ -285,22 +280,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
       setNotifications(prev => [item, ...prev]);
     } catch {
-      // Optimistic local-only fallback
       const local: NotificationItem = {
-        ...n,
-        id: Date.now().toString(36),
+        ...n, id: Date.now().toString(36),
         createdAt: new Date().toISOString(),
       };
       setNotifications(prev => [local, ...prev]);
     }
   };
 
-  // ── Trial ─────────────────────────────────────────────────────────────────
-  const trialDaysLeft = trialStart
-    ? Math.max(0, TRIAL_DAYS - Math.floor((Date.now() - new Date(trialStart).getTime()) / 86400000))
-    : TRIAL_DAYS;
+  // ── Plan / Trial logic (server-driven) ───────────────────────────────────
+  const now = Date.now();
+
+  let trialDaysLeft = TRIAL_DAYS;
+  let trialExpired  = false;
+
+  if (!storeIsActive) {
+    // Admin explicitly deactivated this store
+    trialExpired = true;
+    trialDaysLeft = 0;
+  } else if (planExpiry) {
+    // Admin-activated plan
+    const msLeft = new Date(planExpiry).getTime() - now;
+    if (msLeft <= 0) {
+      trialExpired = true;
+      trialDaysLeft = 0;
+    } else {
+      trialDaysLeft = Math.ceil(msLeft / 86400000);
+      trialExpired = false;
+    }
+  } else if (storeCreatedAt) {
+    // No plan yet — count down 14-day trial
+    const daysSince = Math.floor((now - new Date(storeCreatedAt).getTime()) / 86400000);
+    trialDaysLeft = Math.max(0, TRIAL_DAYS - daysSince);
+    trialExpired = storeProfiles.length > 0 && trialDaysLeft === 0;
+  }
+
   const isOnboardingComplete = storeProfiles.length > 0;
-  const trialExpired = isOnboardingComplete && trialDaysLeft === 0;
   const unreadCount = notifications.filter(n => !n.read).length;
 
   if (!hydrated) {
