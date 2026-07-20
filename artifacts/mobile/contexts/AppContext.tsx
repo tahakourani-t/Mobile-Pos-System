@@ -27,7 +27,7 @@ interface AppContextType {
   activeStoreId: string | null;
   user: AppUser | null;
   /** Login with email + PIN — server resolves the store automatically */
-  login: (email: string, pin: string) => Promise<boolean>;
+  login: (email: string, pin: string) => Promise<{ ok: boolean; emailVerificationRequired?: boolean; storeId?: string }>;
   logout: () => Promise<void>;
 
   // Store profiles (for the store-picker on login screen)
@@ -157,7 +157,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const login = async (email: string, pin: string): Promise<boolean> => {
+  const login = async (email: string, pin: string): Promise<{ ok: boolean; emailVerificationRequired?: boolean; storeId?: string }> => {
     try {
       const result = await api.auth.login(email, pin);
       await api.saveToken(result.token);
@@ -179,9 +179,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       await _loadStoreSettings(result.user.storeId);
       await _loadNotifications();
-      return true;
-    } catch {
-      return false;
+      return { ok: true };
+    } catch (e: any) {
+      if (e?.emailVerificationRequired) {
+        return { ok: false, emailVerificationRequired: true, storeId: e.storeId };
+      }
+      return { ok: false };
     }
   };
 

@@ -63,10 +63,12 @@ export default function LoginScreen() {
     if (newPin.length === PIN_LENGTH) {
       setLoading(true);
       await new Promise(r => setTimeout(r, 300));
-      const ok = await login(email.trim(), newPin);
+      const result = await login(email.trim(), newPin);
       setLoading(false);
-      if (ok) {
+      if (result.ok) {
         router.replace('/(tabs)');
+      } else if (result.emailVerificationRequired) {
+        router.push(`/verify-email?storeId=${result.storeId ?? ''}&email=${encodeURIComponent(email.trim())}`);
       } else {
         shake();
         setError('Incorrect email or PIN. Try again.');
