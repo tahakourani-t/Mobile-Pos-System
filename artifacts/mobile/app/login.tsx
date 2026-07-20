@@ -217,14 +217,15 @@ export default function LoginScreen() {
           )}
         </View>
 
-        {/* Admin access link */}
+        {/* Create store link */}
         <TouchableOpacity
-          onPress={() => router.push('/admin')}
+          onPress={() => router.push('/onboarding')}
           style={styles.adminLink}
         >
-          <Ionicons name="shield-outline" size={14} color={colors.mutedForeground} />
+          <Ionicons name="storefront-outline" size={14} color={colors.mutedForeground} />
           <Text style={[styles.adminLinkText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
-            Admin Panel
+            Don't have a store?{' '}
+            <Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Create one</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
