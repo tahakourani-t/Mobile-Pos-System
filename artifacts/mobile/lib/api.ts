@@ -60,6 +60,8 @@ async function apiFetch<T>(
 
 export interface AuthResult {
   token: string;
+  /** Only present when user.role === 'superadmin' — lets the app skip the admin-panel's own PIN login */
+  adminToken?: string;
   user: ApiUser;
   store: ApiStore;
 }

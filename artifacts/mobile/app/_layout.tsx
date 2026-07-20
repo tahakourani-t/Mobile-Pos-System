@@ -22,7 +22,7 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, trialExpired, isOnboardingComplete } = useApp();
+  const { isAuthenticated, trialExpired, isOnboardingComplete, user } = useApp();
   const router = useRouter();
   const segments = useSegments();
 
@@ -32,6 +32,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const inLogin        = current === 'login';
     const inPaywall      = current === 'paywall';
     const inVerifyEmail  = current === 'verify-email';
+    const inAdmin        = current === 'admin';
+
+    const isSuperAdmin = user?.role === 'superadmin';
 
     if (!isOnboardingComplete && !inOnboarding) {
       // First launch — go to onboarding
@@ -39,14 +42,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (isOnboardingComplete && !isAuthenticated && !inLogin && !inOnboarding && !inVerifyEmail) {
       // Onboarding done, needs PIN login
       router.replace('/login');
-    } else if (isOnboardingComplete && isAuthenticated && trialExpired && !inPaywall) {
-      // Trial over — paywall
+    } else if (isOnboardingComplete && isAuthenticated && isSuperAdmin && !inAdmin) {
+      // Superadmin goes directly to admin panel — never sees cashier tabs
+      router.replace('/admin');
+    } else if (isOnboardingComplete && isAuthenticated && !isSuperAdmin && trialExpired && !inPaywall) {
+      // Trial over — paywall (only for regular store users)
       router.replace('/paywall');
-    } else if (isOnboardingComplete && isAuthenticated && !trialExpired && (inLogin || inOnboarding || inPaywall)) {
-      // All good — go to app
+    } else if (isOnboardingComplete && isAuthenticated && !isSuperAdmin && !trialExpired && (inLogin || inOnboarding || inPaywall)) {
+      // Regular user all good — go to POS tabs
       router.replace('/(tabs)');
     }
-  }, [isAuthenticated, trialExpired, isOnboardingComplete, segments]);
+  }, [isAuthenticated, trialExpired, isOnboardingComplete, user, segments]);
 
   return <>{children}</>;
 }

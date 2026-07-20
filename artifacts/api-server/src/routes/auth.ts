@@ -240,7 +240,13 @@ router.post("/login", async (req, res) => {
       name: matchedUser.name,
     });
 
-    res.json({ token, user: { ...matchedUser, pinHash: undefined }, store });
+    // For superadmin: also return an adminToken so the app can skip the admin panel's own login
+    const adminToken =
+      matchedUser.role === "superadmin"
+        ? signToken({ userId: matchedUser.id, storeId: matchedUser.storeId, role: "superadmin", name: matchedUser.name })
+        : undefined;
+
+    res.json({ token, adminToken, user: { ...matchedUser, pinHash: undefined }, store });
   } catch (err) {
     res.status(500).json({ error: "Login failed", detail: String(err) });
   }

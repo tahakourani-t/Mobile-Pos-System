@@ -10,7 +10,7 @@ export interface AppUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'cashier' | 'manager';
+  role: 'admin' | 'cashier' | 'manager' | 'superadmin';
   storeId: string;
 }
 
@@ -172,6 +172,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await AsyncStorage.setItem('active_store_id', result.user.storeId);
       await AsyncStorage.setItem('current_user', JSON.stringify(u));
 
+      // Save adminToken for superadmin so admin panel skips its own PIN screen
+      if (result.adminToken) {
+        await AsyncStorage.setItem('admin_token', result.adminToken);
+      }
+
       // Capture plan info straight from the login response
       setStoreCreatedAt(result.store.createdAt);
       setPlanExpiry(result.store.planExpiry ?? null);
@@ -190,7 +195,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await api.clearToken();
-    await AsyncStorage.multiRemove(['active_store_id', 'current_user']);
+    await AsyncStorage.multiRemove(['active_store_id', 'current_user', 'admin_token']);
     setIsAuthenticated(false);
     setUser(null);
     setNotifications([]);
