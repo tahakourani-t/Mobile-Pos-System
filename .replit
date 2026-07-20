@@ -58,3 +58,14 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+AUTH_REPLY_TO_EMAIL = "sayloraengines@gmail.com"
+SMTP_FROM_EMAIL = "sayloraengines@gmail.com"
+SMTP_FROM_NAME = "Saylora"
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = "587"
+SMTP_SECURE = "false"
+SMTP_USER = "sayloraengines@gmail.com"

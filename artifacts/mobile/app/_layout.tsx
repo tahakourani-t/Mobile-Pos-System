@@ -28,14 +28,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const current = segments[0] as string | undefined;
-    const inOnboarding = current === 'onboarding';
-    const inLogin      = current === 'login';
-    const inPaywall    = current === 'paywall';
+    const inOnboarding   = current === 'onboarding';
+    const inLogin        = current === 'login';
+    const inPaywall      = current === 'paywall';
+    const inVerifyEmail  = current === 'verify-email';
 
     if (!isOnboardingComplete && !inOnboarding) {
       // First launch — go to onboarding
       router.replace('/onboarding');
-    } else if (isOnboardingComplete && !isAuthenticated && !inLogin && !inOnboarding) {
+    } else if (isOnboardingComplete && !isAuthenticated && !inLogin && !inOnboarding && !inVerifyEmail) {
       // Onboarding done, needs PIN login
       router.replace('/login');
     } else if (isOnboardingComplete && isAuthenticated && trialExpired && !inPaywall) {
@@ -54,9 +55,10 @@ function RootLayoutNav() {
   return (
     <AuthGuard>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
-        <Stack.Screen name="login"      options={{ animation: 'fade' }} />
-        <Stack.Screen name="paywall"    options={{ animation: 'fade' }} />
+        <Stack.Screen name="onboarding"   options={{ animation: 'fade' }} />
+        <Stack.Screen name="login"        options={{ animation: 'fade' }} />
+        <Stack.Screen name="verify-email" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="paywall"      options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="inventory"     options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="customers"     options={{ animation: 'slide_from_right' }} />

@@ -151,5 +151,8 @@ sqlite.exec(`
 
 // ── Migrate existing databases (add new columns safely) ─────────────────────
 try { sqlite.exec("ALTER TABLE stores ADD COLUMN plan_expiry TEXT"); } catch {}
+try { sqlite.exec("ALTER TABLE stores ADD COLUMN is_verified INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { sqlite.exec("ALTER TABLE stores ADD COLUMN verification_code TEXT"); } catch {}
+try { sqlite.exec("ALTER TABLE stores ADD COLUMN verification_code_expiry TEXT"); } catch {}
 
 export * from "./schema";

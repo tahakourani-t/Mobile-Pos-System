@@ -100,17 +100,51 @@ export interface StoreProfile {
   createdAt: string;
 }
 
+export interface LoginError {
+  error: string;
+  emailVerificationRequired?: boolean;
+  storeId?: string;
+}
+
 export const auth = {
   listStores: () => apiFetch<StoreProfile[]>('/api/auth/stores'),
 
   setup: (body: {
     storeName: string; phone: string; email?: string;
     address?: string; currency?: string; logoUri?: string; language?: string; pin: string;
-  }) => apiFetch<AuthResult>('/api/auth/setup', { method: 'POST', body: JSON.stringify(body) }),
+  }) => apiFetch<AuthResult & { emailVerificationRequired?: boolean }>('/api/auth/setup', { method: 'POST', body: JSON.stringify(body) }),
 
-  /** Login with email + PIN — server auto-detects the store */
-  login: (email: string, pin: string) =>
-    apiFetch<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, pin }) }),
+  /**
+   * Login with email + PIN.
+   * On success → resolves to AuthResult.
+   * On unverified store → rejects with a LoginError (check e.emailVerificationRequired).
+   */
+  login: async (email: string, pin: string): Promise<AuthResult> => {
+    const url = `${getBase()}/api/auth/login`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, pin }),
+    });
+    const json = await res.json() as AuthResult & LoginError;
+    if (!res.ok) {
+      const err = new Error(json.error ?? `HTTP ${res.status}`) as Error & LoginError;
+      err.emailVerificationRequired = json.emailVerificationRequired;
+      err.storeId = json.storeId;
+      throw err;
+    }
+    return json;
+  },
+
+  verifyEmail: (storeId: string, code: string) =>
+    apiFetch<{ message: string }>('/api/auth/verify-email', {
+      method: 'POST', body: JSON.stringify({ storeId, code }),
+    }),
+
+  resendVerification: (storeId: string) =>
+    apiFetch<{ message: string }>('/api/auth/resend-verification', {
+      method: 'POST', body: JSON.stringify({ storeId }),
+    }),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
