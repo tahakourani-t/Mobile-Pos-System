@@ -1,0 +1,535 @@
+# Build a Modern POS Mobile App (React Native + Expo)
+
+## Project Overview
+
+Build a **production-quality Point of Sale (POS) mobile application** for Android and iOS using **React Native (Expo)** and **TypeScript**.
+
+The application is designed for **small businesses** such as:
+
+* Grocery Stores
+* Mini Markets
+* Clothing Stores
+* Electronics Shops
+* Pharmacies
+* Bakeries
+* Coffee Shops
+* Hardware Stores
+
+The app should be modern, extremely fast, scalable, and feel similar in quality to Shopify POS, Square POS, and Stripe Dashboard.
+
+---
+
+# Design Requirements
+
+Create a premium UI with:
+
+* Clean modern design
+* Beautiful animations
+* Rounded corners
+* Soft shadows
+* Material Design principles
+* Light Mode
+* Dark Mode
+* Arabic (RTL)
+* English (LTR)
+* Responsive for phones and tablets
+
+Use:
+
+* Expo (latest)
+* React Native
+* TypeScript
+* Expo Router
+* React Navigation
+* React Query
+* React Hook Form
+* Zod
+* Zustand
+* React Native Reanimated
+* React Native Gesture Handler
+* React Native SVG
+* FlashList
+* React Native Bottom Sheet
+* MMKV Storage
+* React Native Paper (or Tamagui)
+
+Use a modular architecture with reusable components.
+
+---
+
+# Authentication
+
+* Login
+* Register
+* Forgot Password
+* PIN Lock
+* Biometric Login
+* Remember Me
+
+---
+
+# Dashboard
+
+Show:
+
+Today's Sales
+
+Today's Orders
+
+Profit
+
+Expenses
+
+Inventory Alerts
+
+Recent Orders
+
+Quick Actions
+
+Sales Graph
+
+Best Selling Products
+
+Notifications
+
+---
+
+# POS Screen
+
+Fast checkout screen.
+
+Features:
+
+Barcode Scanner
+
+Search Products
+
+Categories
+
+Favorites
+
+Shopping Cart
+
+Increase Quantity
+
+Decrease Quantity
+
+Discount
+
+Tax
+
+Notes
+
+Hold Order
+
+Resume Order
+
+Split Payment
+
+Cash Payment
+
+Card Payment
+
+Custom Payment
+
+Print Receipt
+
+Share Receipt
+
+Generate QR Receipt
+
+---
+
+# Products
+
+Create Product
+
+Edit Product
+
+Delete Product
+
+Product Images
+
+Categories
+
+SKU
+
+Barcode
+
+Stock Quantity
+
+Purchase Price
+
+Selling Price
+
+Profit Margin
+
+Low Stock Alert
+
+Multiple Variants
+
+Multiple Units
+
+Product Search
+
+Product Filter
+
+---
+
+# Inventory
+
+Stock Movement
+
+Transfer Between Branches
+
+Adjust Quantity
+
+Inventory History
+
+Low Stock
+
+Out of Stock
+
+Purchase Orders
+
+Suppliers
+
+---
+
+# Customers
+
+Customer List
+
+Customer Details
+
+Purchase History
+
+Store Credit
+
+Reward Points
+
+Favorite Products
+
+Customer Notes
+
+---
+
+# Suppliers
+
+Supplier Management
+
+Phone
+
+Email
+
+Address
+
+Purchase History
+
+Outstanding Balance
+
+---
+
+# Expenses
+
+Create Expense
+
+Expense Categories
+
+Expense Reports
+
+Recurring Expenses
+
+---
+
+# Employees
+
+Employee Accounts
+
+Permissions
+
+Roles
+
+Attendance
+
+Sales Performance
+
+---
+
+# Reports
+
+Daily Sales
+
+Weekly Sales
+
+Monthly Sales
+
+Yearly Sales
+
+Top Products
+
+Top Customers
+
+Revenue
+
+Profit
+
+Expenses
+
+Inventory Report
+
+Employee Report
+
+Export PDF
+
+Export Excel
+
+---
+
+# Multi Branch
+
+Multiple Stores
+
+Switch Branch
+
+Transfer Inventory
+
+Branch Reports
+
+Branch Employees
+
+---
+
+# Push Notifications (No SMS)
+
+Do NOT implement SMS notifications.
+
+Implement a complete in-app push notification system.
+
+Requirements:
+
+* Push notifications sent directly to the mobile app
+* Real-time notifications
+* Notification center inside the app
+* Unread notification badge
+* Mark as read
+* Delete notification
+* Notification history
+* Different notification types
+
+Examples:
+
+New Order
+
+Low Stock
+
+Subscription Expiring
+
+Employee Activity
+
+New Customer
+
+Inventory Transfer
+
+Daily Sales Summary
+
+System Announcement
+
+Notification should open the related screen when tapped.
+
+Use Firebase Cloud Messaging (FCM) or Expo Push Notifications.
+
+---
+
+# Receipt
+
+Professional receipt layout.
+
+Business Logo
+
+Business Name
+
+Address
+
+Phone
+
+VAT Number
+
+Cashier
+
+Items
+
+Discount
+
+Tax
+
+Grand Total
+
+QR Code
+
+Print
+
+Share
+
+Download PDF
+
+---
+
+# Settings
+
+Business Information
+
+Printer Settings
+
+Tax Settings
+
+Currency
+
+Language
+
+Theme
+
+Backup
+
+Restore
+
+Permissions
+
+Subscription
+
+Logout
+
+---
+
+# Offline Support
+
+The app must work offline.
+
+Requirements:
+
+Local Database
+
+Offline Orders
+
+Offline Inventory Updates
+
+Automatic Sync
+
+Conflict Resolution
+
+Sync Indicator
+
+---
+
+# Performance
+
+Startup under 2 seconds.
+
+Support 100,000+ products.
+
+Smooth 60 FPS animations.
+
+Virtualized product lists.
+
+Optimized image loading.
+
+Lazy loading.
+
+---
+
+# Security
+
+JWT Authentication
+
+Encrypted Storage
+
+Role Permissions
+
+Secure API Layer
+
+Input Validation
+
+---
+
+# Folder Structure
+
+Use a clean scalable architecture.
+
+Example:
+
+```
+app/
+components/
+features/
+screens/
+hooks/
+services/
+api/
+store/
+navigation/
+constants/
+utils/
+types/
+assets/
+theme/
+```
+
+---
+
+# Code Quality
+
+Strict TypeScript
+
+Reusable Components
+
+Custom Hooks
+
+No duplicated code
+
+SOLID principles
+
+Feature-based architecture
+
+Well documented
+
+Easy to maintain
+
+---
+
+# Future Ready
+
+Design the app so these features can be added later:
+
+Online Store
+
+Delivery Drivers
+
+Kitchen Display
+
+Table Management
+
+Reservations
+
+Accounting Integration
+
+AI Sales Insights
+
+Loyalty Program
+
+Coupons
+
+Gift Cards
+
+WhatsApp Sharing
+
+Multi Business
+
+Franchise Support
+
+---
+
+# Final Goal
+
+Build a premium, scalable POS application that feels like a commercial product rather than a demo. Every screen should be polished, responsive, and production-ready, with clean architecture and reusable components. The app should be easy to extend with backend APIs in the future.
+
+This prompt gives Replit enough detail to generate a high-quality foundation while keeping the notification system entirely based on **mobile push notifications and an in-app notification center**, with no SMS functionality.
