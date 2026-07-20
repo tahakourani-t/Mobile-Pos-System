@@ -1,7 +1,13 @@
+/**
+ * Admin Panel
+ * Two tabs after PIN login:
+ *   1. Stores  — activate / deactivate with 1-month or 1-year duration, live counter
+ *   2. Notify  — compose and send an email reminder to any store owner
+ */
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert, Platform,
+  TextInput, ActivityIndicator, Alert, Platform, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,698 +17,680 @@ import { useColors } from '@/hooks/useColors';
 import * as api from '@/lib/api';
 
 type AdminStore = api.ApiStore;
+type Tab = 'stores' | 'notify';
 
-const PIN_LENGTH = 4;
-const PAD = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// ── Plan helpers ──────────────────────────────────────────────────────────────
-
-function getPlanStatus(store: AdminStore): { label: string; color: string; isPaid: boolean } {
-  if (!store.isActive) return { label: 'Deactivated', color: '#EF4444', isPaid: false };
-  if (store.planExpiry) {
-    const left = new Date(store.planExpiry).getTime() - Date.now();
-    if (left > 0) return { label: 'Active', color: '#10B981', isPaid: true };
-    return { label: 'Plan Expired', color: '#F59E0B', isPaid: false };
-  }
-  const daysSince = Math.floor((Date.now() - new Date(store.createdAt).getTime()) / 86400000);
-  if (daysSince < 14) return { label: `Trial (${14 - daysSince}d)`, color: '#3B82F6', isPaid: false };
-  return { label: 'Trial Expired', color: '#F59E0B', isPaid: false };
-}
-
-function getDaysLeft(store: AdminStore): { text: string; color: string } {
-  if (!store.isActive) return { text: 'Blocked', color: '#EF4444' };
+function planColor(store: AdminStore): string {
+  if (!store.isActive) return '#EF4444';
   if (store.planExpiry) {
     const ms = new Date(store.planExpiry).getTime() - Date.now();
-    if (ms <= 0) return { text: 'Expired', color: '#F59E0B' };
-    const days = Math.ceil(ms / 86400000);
-    const exp = new Date(store.planExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    return { text: `${days} day${days === 1 ? '' : 's'} left · Expires ${exp}`, color: '#10B981' };
+    return ms > 0 ? '#10B981' : '#F59E0B';
   }
-  const daysSince = Math.floor((Date.now() - new Date(store.createdAt).getTime()) / 86400000);
-  const left = Math.max(0, 14 - daysSince);
-  if (left > 0) return { text: `${left} trial day${left === 1 ? '' : 's'} left`, color: '#3B82F6' };
-  return { text: 'Trial ended', color: '#F59E0B' };
+  const days = Math.floor((Date.now() - new Date(store.createdAt).getTime()) / 86400000);
+  return days < 14 ? '#3B82F6' : '#F59E0B';
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+function planLabel(store: AdminStore): string {
+  if (!store.isActive) return 'Deactivated';
+  if (store.planExpiry) {
+    const ms = new Date(store.planExpiry).getTime() - Date.now();
+    if (ms <= 0) return 'Plan expired';
+    const d = Math.ceil(ms / 86400000);
+    const exp = new Date(store.planExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${d} day${d === 1 ? '' : 's'} left · expires ${exp}`;
+  }
+  const days = Math.floor((Date.now() - new Date(store.createdAt).getTime()) / 86400000);
+  const left = Math.max(0, 14 - days);
+  return left > 0 ? `Trial · ${left} day${left === 1 ? '' : 's'} left` : 'Trial ended';
+}
 
+function isPaid(store: AdminStore): boolean {
+  if (!store.isActive || !store.planExpiry) return false;
+  return new Date(store.planExpiry).getTime() > Date.now();
+}
+
+// ── PIN pad config ────────────────────────────────────────────────────────────
+const PIN_LENGTH = 4;
+const PAD: string[] = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+
+// ═════════════════════════════════════════════════════════════════════════════
 export default function AdminScreen() {
   const colors = useColors();
-  const router = useRouter();
+  const router  = useRouter();
 
-  const [adminToken, setAdminToken]       = useState<string | null>(null);
-  const [stores, setStores]               = useState<AdminStore[]>([]);
-  const [loadingStores, setLoadingStores] = useState(false);
+  // ── auth
+  const [token, setToken]         = useState<string | null>(null);
+  const [email, setEmail]         = useState('');
+  const [pin, setPin]             = useState('');
+  const [loginErr, setLoginErr]   = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
 
-  // Login state
-  const [loginEmail, setLoginEmail]       = useState('');
-  const [pin, setPin]                     = useState('');
-  const [loginError, setLoginError]       = useState('');
-  const [loginLoading, setLoginLoading]   = useState(false);
+  // ── data
+  const [stores, setStores]       = useState<AdminStore[]>([]);
+  const [loading, setLoading]     = useState(false);
 
-  // Activation modal
-  const [activating, setActivating]       = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  // ── active tab
+  const [tab, setTab]             = useState<Tab>('stores');
 
-  // Notification section
-  const [notifyStoreId, setNotifyStoreId] = useState<string>('');
-  const [notifySubject, setNotifySubject] = useState('');
-  const [notifyMsg, setNotifyMsg]         = useState('');
-  const [notifyLoading, setNotifyLoading] = useState(false);
-  const [notifyPickerOpen, setNotifyPickerOpen] = useState(false);
+  // ── activation state (per-store inline)
+  const [activating, setActivating] = useState<string | null>(null); // storeId being activated
 
-  // ── Admin login ─────────────────────────────────────────────────────────────
+  // ── notification form
+  const [notifyId, setNotifyId]     = useState('');
+  const [subject, setSubject]       = useState('');
+  const [message, setMessage]       = useState('');
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  const loadStores = useCallback(async (t: string) => {
+    setLoading(true);
+    try {
+      const list = await api.admin.listStores(t);
+      setStores(list);
+      if (list.length > 0) setNotifyId(id => id || list[0].id);
+    } catch {
+      Alert.alert('Error', 'Could not load stores.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── PIN key press
   const handleKey = async (key: string) => {
-    if (key === '⌫') { setPin(p => p.slice(0, -1)); setLoginError(''); return; }
-    if (key === '') return;
-    if (pin.length >= PIN_LENGTH) return;
+    if (key === '⌫') { setPin(p => p.slice(0, -1)); setLoginErr(''); return; }
+    if (key === '' || pin.length >= PIN_LENGTH) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const newPin = pin + key;
-    setPin(newPin);
-    setLoginError('');
-    if (newPin.length === PIN_LENGTH) {
-      setLoginLoading(true);
-      await new Promise(r => setTimeout(r, 300));
+    const next = pin + key;
+    setPin(next);
+    setLoginErr('');
+    if (next.length === PIN_LENGTH) {
+      setLoginBusy(true);
+      await new Promise(r => setTimeout(r, 250));
       try {
-        const result = await api.admin.login(loginEmail.trim(), newPin);
-        setAdminToken(result.token);
-        await loadStores(result.token);
+        const res = await api.admin.login(email.trim(), next);
+        setToken(res.token);
+        await loadStores(res.token);
       } catch (e: any) {
-        setLoginError(e.message ?? 'Invalid credentials');
+        setLoginErr(e.message ?? 'Invalid credentials');
         setPin('');
       } finally {
-        setLoginLoading(false);
+        setLoginBusy(false);
       }
     }
   };
 
-  const loadStores = async (token: string) => {
-    setLoadingStores(true);
-    try {
-      const list = await api.admin.listStores(token);
-      setStores(list);
-      if (list.length > 0 && !notifyStoreId) setNotifyStoreId(list[0].id);
-    } catch {
-      Alert.alert('Error', 'Could not load stores.');
-    } finally {
-      setLoadingStores(false);
-    }
-  };
-
+  // ── Activate
   const handleActivate = async (storeId: string, duration: '1month' | '1year') => {
-    if (!adminToken) return;
-    setActionLoading(true);
+    if (!token) return;
+    setActivating(storeId);
     try {
-      const updated = await api.admin.activate(storeId, duration, adminToken);
+      const updated = await api.admin.activate(storeId, duration, token);
       setStores(prev => prev.map(s => s.id === storeId ? updated : s));
-      setActivating(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Activation failed');
     } finally {
-      setActionLoading(false);
+      setActivating(null);
     }
   };
 
-  const handleDeactivate = async (storeId: string, storeName: string) => {
-    if (!adminToken) return;
-    Alert.alert(
-      'Deactivate Store',
-      `Block "${storeName}"? Users won't be able to log in until reactivated.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate', style: 'destructive',
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              const updated = await api.admin.deactivate(storeId, adminToken);
-              setStores(prev => prev.map(s => s.id === storeId ? updated : s));
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch (e: any) {
-              Alert.alert('Error', e.message ?? 'Failed');
-            } finally {
-              setActionLoading(false);
-            }
-          },
+  // ── Deactivate
+  const handleDeactivate = (storeId: string, name: string) => {
+    if (!token) return;
+    Alert.alert('Deactivate Store', `Block "${name}"? Users won't be able to log in.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Deactivate', style: 'destructive',
+        onPress: async () => {
+          setActivating(storeId);
+          try {
+            const updated = await api.admin.deactivate(storeId, token);
+            setStores(prev => prev.map(s => s.id === storeId ? updated : s));
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e: any) {
+            Alert.alert('Error', e.message ?? 'Failed');
+          } finally {
+            setActivating(null);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  const handleSendNotification = async () => {
-    if (!adminToken || !notifyStoreId || !notifyMsg.trim()) {
-      Alert.alert('Error', 'Please select a store and write a message.');
+  // ── Send notification
+  const handleSend = async () => {
+    if (!token || !notifyId || !message.trim()) {
+      Alert.alert('Missing info', 'Please select a store and write a message.');
       return;
     }
-    const selectedStore = stores.find(s => s.id === notifyStoreId);
-    if (!selectedStore?.email) {
-      Alert.alert('No Email', `"${selectedStore?.name}" has no email address on file.`);
+    const store = stores.find(s => s.id === notifyId);
+    if (!store?.email) {
+      Alert.alert('No email', `"${store?.name}" has no email address.`);
       return;
     }
-    setNotifyLoading(true);
+    setNotifyBusy(true);
     try {
-      await api.admin.notify(notifyStoreId, notifyMsg.trim(), notifySubject.trim(), adminToken);
+      await api.admin.notify(notifyId, message.trim(), subject.trim(), token);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Sent ✓', `Notification sent to ${selectedStore.email}`);
-      setNotifyMsg('');
-      setNotifySubject('');
+      Alert.alert('Sent ✓', `Email delivered to ${store.email}`);
+      setMessage('');
+      setSubject('');
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to send');
+      Alert.alert('Error', e.message ?? 'Send failed');
     } finally {
-      setNotifyLoading(false);
+      setNotifyBusy(false);
     }
   };
 
-  const selectedStore = stores.find(s => s.id === notifyStoreId);
-
-  // ── Login screen ────────────────────────────────────────────────────────────
-  if (!adminToken) {
+  // ═══════════════════════════════════════════════════
+  //  LOGIN SCREEN
+  // ═══════════════════════════════════════════════════
+  if (!token) {
     return (
-      <View style={[styles.root, { backgroundColor: colors.background }]}>
-        <LinearGradient colors={['#1A56DB', '#0F3A9E']} style={styles.hero}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+      <View style={[s.root, { backgroundColor: colors.background }]}>
+        <LinearGradient colors={['#1A56DB', '#0F3A9E']} style={s.hero}>
+          <TouchableOpacity onPress={() => router.back()} style={s.back}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-          <View style={[styles.heroIcon, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-            <Ionicons name="shield-checkmark" size={40} color="#FFFFFF" />
+          <View style={[s.heroIcon, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+            <Ionicons name="shield-checkmark" size={38} color="#fff" />
           </View>
-          <Text style={[styles.heroTitle, { fontFamily: 'Inter_700Bold' }]}>Admin Panel</Text>
-          <Text style={[styles.heroSub, { fontFamily: 'Inter_400Regular' }]}>Manage stores &amp; subscriptions</Text>
+          <Text style={[s.heroTitle, { fontFamily: 'Inter_700Bold' }]}>Admin Panel</Text>
+          <Text style={[s.heroSub,   { fontFamily: 'Inter_400Regular' }]}>Enter your email and PIN</Text>
         </LinearGradient>
 
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <View style={[styles.loginCard, { backgroundColor: colors.card, borderRadius: colors.radius + 4 }]}>
-            <Text style={[styles.loginLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>Admin Email</Text>
-            <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
-              <Ionicons name="mail-outline" size={18} color={colors.mutedForeground} />
-              <TextInput
-                style={[styles.emailInput, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
-                value={loginEmail}
-                onChangeText={v => { setLoginEmail(v); setLoginError(''); }}
-                placeholder="admin@example.com"
-                placeholderTextColor={colors.mutedForeground}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+        <ScrollView contentContainerStyle={[s.loginContent]} keyboardShouldPersistTaps="handled">
+          {/* Email */}
+          <Text style={[s.label, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>Email</Text>
+          <View style={[s.inputRow, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
+            <Ionicons name="mail-outline" size={18} color={colors.mutedForeground} />
+            <TextInput
+              style={[s.input, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
+              value={email}
+              onChangeText={v => { setEmail(v); setLoginErr(''); }}
+              placeholder="admin@example.com"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
 
-            <Text style={[styles.loginLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold', marginTop: 8 }]}>PIN</Text>
-            <View style={styles.dotsRow}>
-              {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-                <View key={i} style={[styles.dot, {
-                  backgroundColor: i < pin.length ? colors.primary : colors.border,
-                  transform: [{ scale: i < pin.length ? 1.15 : 1 }],
-                }]} />
-              ))}
-            </View>
+          {/* PIN dots */}
+          <Text style={[s.label, { color: colors.foreground, fontFamily: 'Inter_600SemiBold', marginTop: 10 }]}>PIN</Text>
+          <View style={s.dots}>
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+              <View key={i} style={[s.dot, {
+                backgroundColor: i < pin.length ? colors.primary : colors.border,
+                transform: [{ scale: i < pin.length ? 1.2 : 1 }],
+              }]} />
+            ))}
+          </View>
 
-            {loginError ? (
-              <Text style={[styles.errorText, { color: colors.destructive, fontFamily: 'Inter_400Regular' }]}>{loginError}</Text>
-            ) : null}
+          {loginErr ? (
+            <Text style={[s.errTxt, { color: colors.destructive, fontFamily: 'Inter_400Regular' }]}>{loginErr}</Text>
+          ) : null}
 
-            {loginLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
-            ) : (
-              <View style={styles.pad}>
+          {loginBusy
+            ? <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+            : (
+              <View style={s.pad}>
                 {PAD.map((k, i) => (
                   <TouchableOpacity
                     key={i}
-                    style={[styles.padKey, {
+                    style={[s.key, {
                       backgroundColor: k === '⌫' ? colors.muted : k === '' ? 'transparent' : colors.background,
                       borderColor: k === '' || k === '⌫' ? 'transparent' : colors.border,
                       borderRadius: colors.radius + 2,
-                      shadowColor: k === '' || k === '⌫' ? 'transparent' : '#000',
-                      shadowOpacity: 0.05, shadowRadius: 3,
-                      shadowOffset: { width: 0, height: 1 }, elevation: k === '' || k === '⌫' ? 0 : 2,
+                      elevation: k === '' || k === '⌫' ? 0 : 2,
+                      shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
                     }]}
                     onPress={() => handleKey(k)}
-                    disabled={loginLoading || k === ''}
+                    disabled={k === ''}
                     activeOpacity={k === '' ? 1 : 0.7}
                   >
                     {k === '⌫'
                       ? <Ionicons name="backspace-outline" size={20} color={colors.foreground} />
                       : k !== ''
-                        ? <Text style={[styles.padKeyText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{k}</Text>
+                        ? <Text style={[s.keyTxt, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{k}</Text>
                         : null}
                   </TouchableOpacity>
                 ))}
               </View>
             )}
-          </View>
         </ScrollView>
       </View>
     );
   }
 
-  // ── Store management ─────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════
+  //  MAIN PANEL (2 tabs)
+  // ═══════════════════════════════════════════════════
+  const notifyStore = stores.find(s => s.id === notifyId);
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <LinearGradient colors={['#1A56DB', '#0F3A9E']} style={[styles.hero, { paddingBottom: 24 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+    <View style={[s.root, { backgroundColor: colors.background }]}>
+
+      {/* ── Header ── */}
+      <LinearGradient colors={['#1A56DB', '#0F3A9E']} style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.back}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <View style={styles.heroRow}>
-          <View style={[styles.heroIcon, { backgroundColor: 'rgba(255,255,255,0.15)', width: 48, height: 48 }]}>
-            <Ionicons name="shield-checkmark" size={26} color="#FFFFFF" />
-          </View>
-          <View>
-            <Text style={[styles.heroTitle, { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'left' }]}>Admin Panel</Text>
-            <Text style={[styles.heroSub, { fontFamily: 'Inter_400Regular', fontSize: 13 }]}>
-              {stores.length} store{stores.length !== 1 ? 's' : ''} registered
-            </Text>
-          </View>
+        <View style={s.headerCenter}>
+          <Text style={[s.headerTitle, { fontFamily: 'Inter_700Bold' }]}>Admin Panel</Text>
+          <Text style={[s.headerSub,   { fontFamily: 'Inter_400Regular' }]}>
+            {stores.length} store{stores.length !== 1 ? 's' : ''}
+          </Text>
         </View>
+        <TouchableOpacity onPress={() => loadStores(token)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="refresh-outline" size={22} color="rgba(255,255,255,0.85)" />
+        </TouchableOpacity>
       </LinearGradient>
 
-      {loadingStores ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: 16 }]} showsVerticalScrollIndicator={false}>
-
-          {/* ── Stores ── */}
-          {stores.length === 0 ? (
-            <View style={styles.centered}>
-              <Ionicons name="storefront-outline" size={48} color={colors.mutedForeground} />
-              <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', marginTop: 8 }]}>No stores yet</Text>
-            </View>
-          ) : (
-            stores.map(store => {
-              const status   = getPlanStatus(store);
-              const duration = getDaysLeft(store);
-              return (
-                <View key={store.id} style={[styles.storeCard, {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  borderRadius: colors.radius + 2,
-                }]}>
-                  {/* Store header */}
-                  <View style={styles.storeHeader}>
-                    <View style={[styles.storeAvatar, { backgroundColor: colors.primary + '18', borderRadius: 12 }]}>
-                      <Ionicons name="storefront-outline" size={22} color={colors.primary} />
-                    </View>
-                    <View style={styles.storeInfo}>
-                      <Text style={[styles.storeName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-                        {store.name}
-                      </Text>
-                      <Text style={[styles.storeEmail, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]} numberOfLines={1}>
-                        {store.email ? store.email : store.phone || 'No contact'}
-                      </Text>
-                    </View>
-                    <View style={[styles.statusBadge, { backgroundColor: status.color + '18', borderRadius: 20 }]}>
-                      <View style={[styles.statusDot, { backgroundColor: status.color }]} />
-                      <Text style={[styles.statusText, { color: status.color, fontFamily: 'Inter_600SemiBold' }]}>
-                        {status.label}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Verification warning */}
-                  {!store.isVerified && (
-                    <View style={[styles.verifyWarning, { backgroundColor: '#FEF3C7', borderRadius: 8 }]}>
-                      <Ionicons name="mail-unread-outline" size={14} color="#D97706" />
-                      <Text style={[styles.verifyWarningText, { fontFamily: 'Inter_500Medium' }]}>
-                        Email not verified — store cannot log in
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Duration counter — colored based on plan status */}
-                  <View style={[styles.durationRow, {
-                    backgroundColor: duration.color + '15',
-                    borderRadius: 10,
-                    borderLeftWidth: 3,
-                    borderLeftColor: duration.color,
-                  }]}>
-                    <Ionicons name={status.isPaid ? 'ribbon-outline' : 'time-outline'} size={15} color={duration.color} />
-                    <Text style={[styles.durationText, { color: duration.color, fontFamily: 'Inter_600SemiBold' }]}>
-                      {duration.text}
-                    </Text>
-                    {status.isPaid && (
-                      <View style={[styles.paidTag, { backgroundColor: '#10B981' }]}>
-                        <Text style={[styles.paidTagText, { fontFamily: 'Inter_700Bold' }]}>PAID</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Actions */}
-                  <View style={styles.actionsRow}>
-                    <TouchableOpacity
-                      onPress={() => setActivating(store.id)}
-                      style={[styles.activateBtn, { backgroundColor: '#10B981', borderRadius: colors.radius }]}
-                      disabled={actionLoading}
-                    >
-                      <Ionicons name="checkmark-circle-outline" size={16} color="#FFFFFF" />
-                      <Text style={[styles.actionBtnText, { fontFamily: 'Inter_600SemiBold' }]}>Activate</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => handleDeactivate(store.id, store.name)}
-                      style={[styles.deactivateBtn, { borderColor: '#EF4444', borderRadius: colors.radius }]}
-                      disabled={actionLoading || !store.isActive}
-                    >
-                      <Ionicons name="ban-outline" size={16} color={store.isActive ? '#EF4444' : colors.mutedForeground} />
-                      <Text style={[styles.actionBtnText, {
-                        color: store.isActive ? '#EF4444' : colors.mutedForeground,
-                        fontFamily: 'Inter_600SemiBold',
-                      }]}>
-                        Deactivate
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })
-          )}
-
-          {/* ── Email Notification Section ── */}
-          <View style={[styles.notifyCard, {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderRadius: colors.radius + 2,
-          }]}>
-            <View style={styles.notifyHeader}>
-              <View style={[styles.notifyIcon, { backgroundColor: '#3B82F6' + '18', borderRadius: 10 }]}>
-                <Ionicons name="send-outline" size={20} color="#3B82F6" />
-              </View>
-              <View>
-                <Text style={[styles.notifyTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>
-                  Send Notification Email
-                </Text>
-                <Text style={[styles.notifySub, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
-                  Send a message to a store owner
-                </Text>
-              </View>
-            </View>
-
-            {/* Store selector */}
-            <Text style={[styles.fieldLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-              Select Store
-            </Text>
+      {/* ── Tab bar ── */}
+      <View style={[s.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {(['stores', 'notify'] as Tab[]).map(t => {
+          const active = tab === t;
+          const label  = t === 'stores' ? 'Stores' : 'Notifications';
+          const icon   = t === 'stores' ? 'storefront-outline' : 'send-outline';
+          return (
             <TouchableOpacity
-              onPress={() => setNotifyPickerOpen(true)}
-              style={[styles.storePicker, {
-                borderColor: colors.border,
-                backgroundColor: colors.muted,
-                borderRadius: colors.radius,
-              }]}
+              key={t}
+              onPress={() => setTab(t)}
+              style={[s.tabItem, active && [s.tabItemActive, { borderBottomColor: colors.primary }]]}
               activeOpacity={0.8}
             >
-              <Ionicons name="storefront-outline" size={18} color={colors.mutedForeground} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.storePickerName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-                  {selectedStore?.name ?? 'Choose a store…'}
-                </Text>
-                {selectedStore?.email ? (
-                  <Text style={[styles.storePickerEmail, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
-                    {selectedStore.email}
-                  </Text>
-                ) : selectedStore ? (
-                  <Text style={[styles.storePickerEmail, { color: '#F59E0B', fontFamily: 'Inter_400Regular' }]}>
-                    No email on file
-                  </Text>
-                ) : null}
+              <Ionicons name={icon as any} size={18} color={active ? colors.primary : colors.mutedForeground} />
+              <Text style={[s.tabLabel, {
+                color: active ? colors.primary : colors.mutedForeground,
+                fontFamily: active ? 'Inter_700Bold' : 'Inter_500Medium',
+              }]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* ══════════════ TAB: STORES ══════════════ */}
+      {tab === 'stores' && (
+        loading
+          ? <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+          : stores.length === 0
+            ? (
+              <View style={s.center}>
+                <Ionicons name="storefront-outline" size={52} color={colors.mutedForeground} />
+                <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', marginTop: 10 }]}>No stores yet</Text>
               </View>
-              <Ionicons name="chevron-down" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
+            )
+            : (
+              <ScrollView contentContainerStyle={[s.list, { paddingBottom: 60 }]} showsVerticalScrollIndicator={false}>
+                {stores.map(store => {
+                  const color    = planColor(store);
+                  const label    = planLabel(store);
+                  const paid     = isPaid(store);
+                  const isBusy   = activating === store.id;
 
-            {/* Subject */}
-            <Text style={[styles.fieldLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-              Subject <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>(optional)</Text>
-            </Text>
-            <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
-              <Ionicons name="text-outline" size={16} color={colors.mutedForeground} />
-              <TextInput
-                style={[styles.emailInput, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
-                value={notifySubject}
-                onChangeText={setNotifySubject}
-                placeholder="Important update from Saylora"
-                placeholderTextColor={colors.mutedForeground}
-              />
-            </View>
+                  return (
+                    <View key={store.id} style={[s.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 }]}>
 
-            {/* Message */}
-            <Text style={[styles.fieldLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-              Message
-            </Text>
-            <View style={[styles.msgWrap, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
-              <TextInput
-                style={[styles.msgInput, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
-                value={notifyMsg}
-                onChangeText={setNotifyMsg}
-                placeholder="Write your notification message here…"
-                placeholderTextColor={colors.mutedForeground}
-                multiline
-                numberOfLines={5}
-                textAlignVertical="top"
-              />
-            </View>
+                      {/* Store identity row */}
+                      <View style={s.cardHead}>
+                        <View style={[s.avatar, { backgroundColor: colors.primary + '18', borderRadius: 12 }]}>
+                          <Ionicons name="storefront-outline" size={22} color={colors.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.storeName, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{store.name}</Text>
+                          <Text style={[s.storeContact, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]} numberOfLines={1}>
+                            {store.email ?? store.phone ?? 'No contact'}
+                          </Text>
+                        </View>
+                        {/* Verified badge */}
+                        <View style={[s.verBadge, {
+                          backgroundColor: store.isVerified ? '#10B98118' : '#F59E0B18',
+                          borderRadius: 20,
+                        }]}>
+                          <Ionicons
+                            name={store.isVerified ? 'checkmark-circle' : 'mail-unread-outline'}
+                            size={14}
+                            color={store.isVerified ? '#10B981' : '#F59E0B'}
+                          />
+                          <Text style={[s.verTxt, {
+                            color: store.isVerified ? '#10B981' : '#F59E0B',
+                            fontFamily: 'Inter_600SemiBold',
+                          }]}>
+                            {store.isVerified ? 'Verified' : 'Unverified'}
+                          </Text>
+                        </View>
+                      </View>
 
-            <TouchableOpacity
-              onPress={handleSendNotification}
-              disabled={notifyLoading || !notifyMsg.trim()}
-              style={[styles.sendBtn, {
-                backgroundColor: notifyLoading || !notifyMsg.trim() ? colors.muted : '#3B82F6',
-                borderRadius: colors.radius,
-              }]}
-              activeOpacity={0.85}
-            >
-              {notifyLoading
-                ? <ActivityIndicator color="#FFFFFF" />
-                : <>
-                    <Ionicons name="send" size={16} color="#FFFFFF" />
-                    <Text style={[styles.sendBtnText, { fontFamily: 'Inter_700Bold' }]}>Send Notification</Text>
-                  </>}
-            </TouchableOpacity>
-          </View>
+                      {/* Duration counter */}
+                      <View style={[s.counter, {
+                        backgroundColor: color + '15',
+                        borderLeftColor: color,
+                        borderRadius: 10,
+                      }]}>
+                        <Ionicons name={paid ? 'ribbon-outline' : 'time-outline'} size={15} color={color} />
+                        <Text style={[s.counterTxt, { color, fontFamily: 'Inter_600SemiBold' }]} numberOfLines={1}>
+                          {label}
+                        </Text>
+                        {paid && (
+                          <View style={[s.paidTag, { backgroundColor: '#10B981' }]}>
+                            <Text style={[s.paidTxt, { fontFamily: 'Inter_700Bold' }]}>PAID</Text>
+                          </View>
+                        )}
+                      </View>
 
-          {/* Refresh */}
-          <TouchableOpacity
-            onPress={() => loadStores(adminToken)}
-            style={[styles.refreshBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
-          >
-            <Ionicons name="refresh-outline" size={18} color={colors.primary} />
-            <Text style={[styles.refreshText, { color: colors.primary, fontFamily: 'Inter_500Medium' }]}>Refresh Stores</Text>
-          </TouchableOpacity>
-        </ScrollView>
+                      {/* ── Activate row: 1 month / 1 year ── */}
+                      {isBusy ? (
+                        <ActivityIndicator color={colors.primary} style={{ marginVertical: 6 }} />
+                      ) : (
+                        <View style={s.btnRow}>
+                          {/* 1 month */}
+                          <TouchableOpacity
+                            onPress={() => handleActivate(store.id, '1month')}
+                            style={[s.btn, s.btnGreen, { borderRadius: colors.radius }]}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons name="calendar-outline" size={15} color="#fff" />
+                            <Text style={[s.btnTxt, { fontFamily: 'Inter_700Bold' }]}>1 Month</Text>
+                          </TouchableOpacity>
+
+                          {/* 1 year */}
+                          <TouchableOpacity
+                            onPress={() => handleActivate(store.id, '1year')}
+                            style={[s.btn, s.btnPurple, { borderRadius: colors.radius }]}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons name="ribbon-outline" size={15} color="#fff" />
+                            <Text style={[s.btnTxt, { fontFamily: 'Inter_700Bold' }]}>1 Year</Text>
+                          </TouchableOpacity>
+
+                          {/* Deactivate */}
+                          <TouchableOpacity
+                            onPress={() => handleDeactivate(store.id, store.name)}
+                            disabled={!store.isActive}
+                            style={[s.btn, s.btnRed, {
+                              borderRadius: colors.radius,
+                              opacity: store.isActive ? 1 : 0.35,
+                            }]}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons name="ban-outline" size={15} color="#fff" />
+                            <Text style={[s.btnTxt, { fontFamily: 'Inter_700Bold' }]}>Block</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )
       )}
 
-      {/* ── Store picker modal ── */}
-      <Modal visible={notifyPickerOpen} transparent animationType="slide" onRequestClose={() => setNotifyPickerOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderRadius: colors.radius + 8 }]}>
-            <View style={styles.modalHandleRow}>
-              <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+      {/* ══════════════ TAB: NOTIFY ══════════════ */}
+      {tab === 'notify' && (
+        <ScrollView contentContainerStyle={[s.list, { paddingBottom: 60 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          <Text style={[s.sectionTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>
+            Send Email Reminder
+          </Text>
+          <Text style={[s.sectionSub, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
+            Send a notification or reminder directly to a store owner's email via SMTP.
+          </Text>
+
+          {/* ── Store picker ── */}
+          <Text style={[s.label, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>Store</Text>
+          <TouchableOpacity
+            onPress={() => setPickerOpen(p => !p)}
+            style={[s.picker, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="storefront-outline" size={18} color={colors.mutedForeground} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.pickerName, { color: notifyStore ? colors.foreground : colors.mutedForeground, fontFamily: 'Inter_600SemiBold' }]}>
+                {notifyStore?.name ?? 'Choose a store…'}
+              </Text>
+              {notifyStore && (
+                <Text style={[s.pickerEmail, {
+                  color: notifyStore.email ? colors.mutedForeground : '#F59E0B',
+                  fontFamily: 'Inter_400Regular',
+                }]}>
+                  {notifyStore.email ?? 'No email on file'}
+                </Text>
+              )}
             </View>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>
-              Select Store
-            </Text>
-            <ScrollView style={{ maxHeight: 320 }}>
+            <Ionicons name={pickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
+          {/* Inline dropdown list */}
+          {pickerOpen && (
+            <View style={[s.dropdown, {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderRadius: colors.radius,
+            }]}>
               {stores.map(store => (
                 <TouchableOpacity
                   key={store.id}
-                  onPress={() => { setNotifyStoreId(store.id); setNotifyPickerOpen(false); }}
-                  style={[styles.pickerRow, {
-                    backgroundColor: store.id === notifyStoreId ? colors.primary + '10' : 'transparent',
-                    borderRadius: colors.radius,
+                  onPress={() => { setNotifyId(store.id); setPickerOpen(false); }}
+                  style={[s.dropRow, {
+                    backgroundColor: store.id === notifyId ? colors.primary + '12' : 'transparent',
+                    borderRadius: colors.radius - 2,
                   }]}
-                  activeOpacity={0.8}
+                  activeOpacity={0.75}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.pickerName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-                      {store.name}
-                    </Text>
-                    <Text style={[styles.pickerEmail, { color: store.email ? colors.mutedForeground : '#F59E0B', fontFamily: 'Inter_400Regular' }]}>
+                    <Text style={[s.pickerName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{store.name}</Text>
+                    <Text style={[s.pickerEmail, {
+                      color: store.email ? colors.mutedForeground : '#F59E0B',
+                      fontFamily: 'Inter_400Regular',
+                    }]}>
                       {store.email ?? 'No email on file'}
                     </Text>
                   </View>
-                  {store.id === notifyStoreId && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                  {store.id === notifyId && (
+                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-            <TouchableOpacity onPress={() => setNotifyPickerOpen(false)} style={styles.cancelBtn}>
-              <Text style={[styles.cancelText, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Activation modal ── */}
-      <Modal visible={!!activating} transparent animationType="slide" onRequestClose={() => setActivating(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderRadius: colors.radius + 8 }]}>
-            <View style={styles.modalHandleRow}>
-              <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
             </View>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>
-              Activate Store
-            </Text>
-            <Text style={[styles.modalSub, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
-              Choose subscription duration
-            </Text>
+          )}
 
-            {actionLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
-            ) : (
-              <View style={styles.durationBtns}>
-                <TouchableOpacity
-                  onPress={() => activating && handleActivate(activating, '1month')}
-                  style={[styles.durationBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-                >
-                  <Ionicons name="calendar-outline" size={28} color="#FFFFFF" />
-                  <Text style={[styles.durationBtnTitle, { fontFamily: 'Inter_700Bold' }]}>1 Month</Text>
-                  <Text style={[styles.durationBtnSub, { fontFamily: 'Inter_400Regular' }]}>30 days access</Text>
-                </TouchableOpacity>
+          {/* Plan status of selected store */}
+          {notifyStore && (
+            <View style={[s.counter, {
+              backgroundColor: planColor(notifyStore) + '15',
+              borderLeftColor: planColor(notifyStore),
+              borderRadius: 10,
+              marginTop: 2,
+            }]}>
+              <Ionicons name="time-outline" size={14} color={planColor(notifyStore)} />
+              <Text style={[s.counterTxt, { color: planColor(notifyStore), fontFamily: 'Inter_600SemiBold' }]} numberOfLines={1}>
+                {planLabel(notifyStore)}
+              </Text>
+            </View>
+          )}
 
-                <TouchableOpacity
-                  onPress={() => activating && handleActivate(activating, '1year')}
-                  style={[styles.durationBtn, { backgroundColor: '#8B5CF6', borderRadius: colors.radius }]}
-                >
-                  <Ionicons name="ribbon-outline" size={28} color="#FFFFFF" />
-                  <Text style={[styles.durationBtnTitle, { fontFamily: 'Inter_700Bold' }]}>1 Year</Text>
-                  <Text style={[styles.durationBtnSub, { fontFamily: 'Inter_400Regular' }]}>365 days access</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <TouchableOpacity onPress={() => setActivating(null)} style={styles.cancelBtn}>
-              <Text style={[styles.cancelText, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>Cancel</Text>
-            </TouchableOpacity>
+          {/* ── Subject ── */}
+          <Text style={[s.label, { color: colors.foreground, fontFamily: 'Inter_600SemiBold', marginTop: 12 }]}>
+            Subject <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>(optional)</Text>
+          </Text>
+          <View style={[s.inputRow, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
+            <Ionicons name="text-outline" size={16} color={colors.mutedForeground} />
+            <TextInput
+              style={[s.input, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
+              value={subject}
+              onChangeText={setSubject}
+              placeholder="e.g. Your subscription expires soon"
+              placeholderTextColor={colors.mutedForeground}
+            />
           </View>
-        </View>
-      </Modal>
+
+          {/* ── Message ── */}
+          <Text style={[s.label, { color: colors.foreground, fontFamily: 'Inter_600SemiBold', marginTop: 12 }]}>Message</Text>
+          <View style={[s.msgBox, { borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radius }]}>
+            <TextInput
+              style={[s.msg, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]}
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Write your notification or reminder here…"
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+            />
+          </View>
+
+          {/* Quick templates */}
+          <Text style={[s.tmplLabel, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>Quick templates:</Text>
+          <View style={s.tmplRow}>
+            {[
+              { label: 'Expiry soon', text: 'Your subscription is expiring soon. Please renew to keep your POS system running.' },
+              { label: 'Payment due', text: 'Your payment is due. Please contact us to renew your subscription.' },
+              { label: 'Plan expired', text: 'Your subscription has expired. Your account is now restricted. Please renew immediately.' },
+            ].map(t => (
+              <TouchableOpacity
+                key={t.label}
+                onPress={() => setMessage(t.text)}
+                style={[s.tmpl, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: colors.radius }]}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.tmplTxt, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* ── Send button ── */}
+          <TouchableOpacity
+            onPress={handleSend}
+            disabled={notifyBusy || !message.trim()}
+            style={[s.sendBtn, {
+              backgroundColor: notifyBusy || !message.trim() ? colors.muted : '#3B82F6',
+              borderRadius: colors.radius,
+            }]}
+            activeOpacity={0.85}
+          >
+            {notifyBusy
+              ? <ActivityIndicator color="#fff" />
+              : (
+                <>
+                  <Ionicons name="send" size={18} color="#fff" />
+                  <Text style={[s.sendTxt, { fontFamily: 'Inter_700Bold' }]}>
+                    Send{notifyStore?.email ? ` to ${notifyStore.email}` : ''}
+                  </Text>
+                </>
+              )}
+          </TouchableOpacity>
+        </ScrollView>
+      )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+// ── Styles ────────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   root: { flex: 1 },
+
+  // login hero
   hero: {
     paddingTop: Platform.OS === 'web' ? 80 : 80,
     paddingBottom: 32, paddingHorizontal: 24,
     alignItems: 'center', gap: 10,
   },
-  backBtn: { position: 'absolute', top: Platform.OS === 'web' ? 24 : 52, left: 20 },
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  heroIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  heroTitle: { fontSize: 22, color: '#FFFFFF', textAlign: 'center' },
-  heroSub: { fontSize: 14, color: 'rgba(255,255,255,0.75)', textAlign: 'center' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20, gap: 14, paddingBottom: 60 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  back: { position: 'absolute', top: Platform.OS === 'web' ? 24 : 52, left: 20, zIndex: 1 },
+  heroIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  heroTitle: { fontSize: 24, color: '#fff' },
+  heroSub:   { fontSize: 14, color: 'rgba(255,255,255,0.75)' },
+  loginContent: { padding: 24, gap: 8 },
 
-  // Login
-  loginCard: {
-    padding: 24,
-    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 }, elevation: 4, gap: 10,
-  },
-  loginLabel: { fontSize: 14 },
-  inputWrap: {
+  // main header
+  header: {
     flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1.5, paddingHorizontal: 14, height: 48, gap: 10,
+    paddingTop: Platform.OS === 'web' ? 24 : 52,
+    paddingBottom: 16, paddingHorizontal: 20, gap: 12,
   },
-  emailInput: { flex: 1, fontSize: 15 },
-  dotsRow: { flexDirection: 'row', gap: 20, justifyContent: 'center', marginVertical: 8 },
-  dot: { width: 16, height: 16, borderRadius: 8 },
-  errorText: { fontSize: 13, textAlign: 'center' },
-  pad: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
-    maxWidth: 300, alignSelf: 'center', justifyContent: 'center', marginTop: 4,
-  },
-  padKey: { width: 80, height: 56, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  padKeyText: { fontSize: 22 },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 20, color: '#fff' },
+  headerSub:   { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
 
-  // Store cards
-  storeCard: {
+  // tab bar
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tabItem: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 7, paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  tabItemActive: { borderBottomWidth: 2 },
+  tabLabel: { fontSize: 14 },
+
+  // shared
+  label:   { fontSize: 13, marginBottom: 4 },
+  list:    { padding: 16, gap: 14 },
+  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+
+  // login
+  inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, paddingHorizontal: 14, height: 50, gap: 10 },
+  input:    { flex: 1, fontSize: 15 },
+  dots:     { flexDirection: 'row', gap: 20, justifyContent: 'center', marginVertical: 10 },
+  dot:      { width: 16, height: 16, borderRadius: 8 },
+  errTxt:   { fontSize: 13, textAlign: 'center', marginTop: 2 },
+  pad:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, maxWidth: 280, alignSelf: 'center', justifyContent: 'center', marginTop: 6 },
+  key:      { width: 78, height: 56, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  keyTxt:   { fontSize: 22 },
+
+  // store card
+  card: {
     borderWidth: 1, padding: 16, gap: 12,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  storeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  storeAvatar: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  storeInfo: { flex: 1 },
-  storeName: { fontSize: 15 },
-  storeEmail: { fontSize: 12, marginTop: 2 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11 },
-  verifyWarning: {
+  cardHead:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar:       { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  storeName:    { fontSize: 15 },
+  storeContact: { fontSize: 12, marginTop: 2 },
+  verBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4 },
+  verTxt:       { fontSize: 11 },
+  counter:      {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 12, paddingVertical: 8,
+    padding: 10, borderLeftWidth: 3,
   },
-  verifyWarningText: { fontSize: 12, color: '#D97706', flex: 1 },
-  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 },
-  durationText: { fontSize: 13, flex: 1 },
-  paidTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  paidTagText: { color: '#FFFFFF', fontSize: 10 },
-  actionsRow: { flexDirection: 'row', gap: 10 },
-  activateBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 6, paddingVertical: 10,
-  },
-  deactivateBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 6, paddingVertical: 10, borderWidth: 1.5,
-  },
-  actionBtnText: { fontSize: 14, color: '#FFFFFF' },
+  counterTxt:   { fontSize: 13, flex: 1 },
+  paidTag:      { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
+  paidTxt:      { color: '#fff', fontSize: 10 },
 
-  // Notification section
-  notifyCard: {
-    borderWidth: 1, padding: 20, gap: 12,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
-  },
-  notifyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
-  notifyIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  notifyTitle: { fontSize: 16 },
-  notifySub: { fontSize: 12, marginTop: 2 },
-  fieldLabel: { fontSize: 13 },
-  storePicker: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10, gap: 10,
-  },
-  storePickerName: { fontSize: 14 },
-  storePickerEmail: { fontSize: 12, marginTop: 1 },
-  msgWrap: { borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
-  msgInput: { fontSize: 14, minHeight: 100 },
-  sendBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, height: 48,
-  },
-  sendBtnText: { fontSize: 15, color: '#FFFFFF' },
-  refreshBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 8, borderWidth: 1, paddingVertical: 12,
-  },
-  refreshText: { fontSize: 14 },
+  // action buttons
+  btnRow:   { flexDirection: 'row', gap: 8 },
+  btn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
+  btnTxt:   { fontSize: 13, color: '#fff' },
+  btnGreen: { backgroundColor: '#10B981' },
+  btnPurple:{ backgroundColor: '#8B5CF6' },
+  btnRed:   { backgroundColor: '#EF4444' },
 
-  // Modals
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center', justifyContent: 'flex-end',
+  // notify form
+  sectionTitle: { fontSize: 20, marginBottom: 2 },
+  sectionSub:   { fontSize: 13, marginBottom: 12, lineHeight: 20 },
+  picker: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1.5,
+    paddingHorizontal: 14, paddingVertical: 12, gap: 10,
   },
-  modalCard: {
-    width: '100%', padding: 24, gap: 8,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 }, elevation: 20,
+  pickerName:  { fontSize: 14 },
+  pickerEmail: { fontSize: 12, marginTop: 1 },
+  dropdown: {
+    borderWidth: 1, padding: 6, gap: 2, marginTop: -4,
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
-  modalHandleRow: { alignItems: 'center', marginBottom: 4 },
-  modalHandle: { width: 40, height: 4, borderRadius: 2 },
-  modalTitle: { fontSize: 22, textAlign: 'center' },
-  modalSub: { fontSize: 14, textAlign: 'center', marginBottom: 8 },
-  durationBtns: { flexDirection: 'row', gap: 12, marginVertical: 8 },
-  durationBtn: { flex: 1, padding: 20, alignItems: 'center', gap: 6 },
-  durationBtnTitle: { fontSize: 18, color: '#FFFFFF' },
-  durationBtnSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-  cancelBtn: { paddingVertical: 12, alignItems: 'center' },
-  cancelText: { fontSize: 15 },
-  pickerRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
-  pickerName: { fontSize: 15 },
-  pickerEmail: { fontSize: 12, marginTop: 2 },
+  dropRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
+  msgBox:  { borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10 },
+  msg:     { fontSize: 14, minHeight: 120, lineHeight: 22 },
+  tmplLabel: { fontSize: 12, marginTop: 6 },
+  tmplRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tmpl:      { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
+  tmplTxt:   { fontSize: 12 },
+  sendBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 52, marginTop: 8 },
+  sendTxt:   { fontSize: 15, color: '#fff' },
 });
