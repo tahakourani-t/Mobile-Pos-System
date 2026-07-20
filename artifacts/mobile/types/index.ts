@@ -18,7 +18,7 @@ export interface Product {
   category: string;
   stock: number;
   unit: string;
-  image?: string;
+  image?: string;        // local URI or remote URL
   isActive: boolean;
   lowStockAlert: number;
   createdAt: string;
@@ -109,7 +109,8 @@ export interface StoreSettings {
   currency: string;
   taxRate: number;
   language: 'en' | 'ar';
-  theme: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'blue' | 'system';
+  logoUri?: string;
 }
 
 export interface WeeklySalesPoint {

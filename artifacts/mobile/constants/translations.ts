@@ -67,6 +67,8 @@ export const t: Record<string, Record<Lang, string>> = {
   orderSummary:     { en: 'Order Summary',        ar: 'ملخص الطلب' },
   paymentMethod:    { en: 'Payment Method',       ar: 'طريقة الدفع' },
   cash:             { en: 'Cash',                 ar: 'نقداً' },
+  card:             { en: 'Card',                 ar: 'بطاقة' },
+  custom:           { en: 'Custom',               ar: 'أخرى' },
   cashReceived:     { en: 'Cash Received',        ar: 'المبلغ المستلم' },
   change:           { en: 'Change',               ar: 'الباقي' },
   confirmPayment:   { en: 'Confirm & Print Receipt', ar: 'تأكيد وطباعة الفاتورة' },
@@ -95,6 +97,9 @@ export const t: Record<string, Record<Lang, string>> = {
   noProductsFound:  { en: 'No products found',   ar: 'لا توجد منتجات' },
   deleteProduct:    { en: 'Delete Product',       ar: 'حذف المنتج' },
   deleteConfirm:    { en: 'Are you sure you want to delete this product?', ar: 'هل أنت متأكد أنك تريد حذف هذا المنتج؟' },
+  productImage:     { en: 'Product Image',        ar: 'صورة المنتج' },
+  addImage:         { en: 'Add Image',            ar: 'إضافة صورة' },
+  changeImage:      { en: 'Change Image',         ar: 'تغيير الصورة' },
 
   // ── Inventory ────────────────────────────────────────────────────────────
   inventory:        { en: 'Inventory',            ar: 'المخزون' },
@@ -144,6 +149,10 @@ export const t: Record<string, Record<Lang, string>> = {
   topProducts:      { en: 'Top Products',         ar: 'أفضل المنتجات' },
   noSalesThisPeriod:{ en: 'No sales in this period', ar: 'لا توجد مبيعات في هذه الفترة' },
   sold:             { en: 'sold',                 ar: 'مبيع' },
+  dailyReport:      { en: 'Daily Report',         ar: 'التقرير اليومي' },
+  sendDailyReport:  { en: 'Send Daily Report via WhatsApp', ar: 'إرسال التقرير اليومي عبر واتساب' },
+  sendingReport:    { en: 'Sending…',             ar: 'جاري الإرسال…' },
+  noPhoneSet:       { en: 'Store phone number not set. Add it in Settings.', ar: 'لم يتم تحديد رقم هاتف المتجر. أضفه في الإعدادات.' },
 
   // ── Expenses ─────────────────────────────────────────────────────────────
   expenses:         { en: 'Expenses',             ar: 'المصاريف' },
@@ -174,6 +183,7 @@ export const t: Record<string, Record<Lang, string>> = {
   vatNumber:        { en: 'VAT Number',           ar: 'الرقم الضريبي' },
   financial:        { en: 'FINANCIAL',            ar: 'المالية' },
   currency:         { en: 'Currency',             ar: 'العملة' },
+  selectCurrency:   { en: 'Select Currency',      ar: 'اختر العملة' },
   defaultTaxRate:   { en: 'Default Tax Rate',     ar: 'نسبة الضريبة الافتراضية' },
   preferences:      { en: 'PREFERENCES',          ar: 'التفضيلات' },
   language:         { en: 'Language',             ar: 'اللغة' },
@@ -181,6 +191,7 @@ export const t: Record<string, Record<Lang, string>> = {
   systemDefault:    { en: 'System Default',       ar: 'افتراضي النظام' },
   dark:             { en: 'Dark',                 ar: 'داكن' },
   light:            { en: 'Light',                ar: 'فاتح' },
+  blue:             { en: 'Navy',                 ar: 'نافي' },
   about:            { en: 'ABOUT',                ar: 'حول التطبيق' },
   version:          { en: 'Version',              ar: 'الإصدار' },
   build:            { en: 'Build',                ar: 'البناء' },

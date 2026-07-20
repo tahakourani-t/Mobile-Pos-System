@@ -23,14 +23,12 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { updateStoreSettings, completeOnboarding } = useApp();
 
-  // Store info
   const [storeName, setStoreName]   = useState('');
   const [email, setEmail]           = useState('');
   const [location, setLocation]     = useState('');
   const [phone, setPhone]           = useState('');
   const [logoUri, setLogoUri]       = useState<string | null>(null);
 
-  // PIN
   const [step, setStep]             = useState<Step>('store');
   const [pin, setPin]               = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -92,10 +90,8 @@ export default function OnboardingScreen() {
 
     if (next.length === PIN_LENGTH) {
       if (!isConfirm) {
-        // Move to confirm step
         setTimeout(() => goToStep('confirm'), 200);
       } else {
-        // Validate & save
         if (next !== pin) {
           shake();
           setPinError('PINs do not match. Try again.');
@@ -115,6 +111,7 @@ export default function OnboardingScreen() {
         email:    email.trim(),
         address:  location.trim(),
         phone:    phone.trim(),
+        currency: 'LBP',
         ...(logoUri ? { logoUri } : {}),
       });
       await AsyncStorage.setItem('user_pin', finalPin);
@@ -143,7 +140,6 @@ export default function OnboardingScreen() {
           {step === 'store' ? 'Tell us about your business' : step === 'pin' ? 'Choose a 4-digit PIN to secure your POS' : 'Confirm your PIN'}
         </Text>
 
-        {/* Step dots */}
         <View style={styles.stepDots}>
           {(['store', 'pin', 'confirm'] as Step[]).map(s => (
             <View
@@ -188,10 +184,10 @@ export default function OnboardingScreen() {
               </TouchableOpacity>
 
               {[
-                { label: 'Store Name *', placeholder: 'e.g. Ahmed Grocery', value: storeName, onChange: setStoreName, kb: 'default' as const, icon: 'storefront-outline' as const },
-                { label: 'Phone Number *', placeholder: '+966 5x xxx xxxx', value: phone, onChange: setPhone, kb: 'phone-pad' as const, icon: 'call-outline' as const },
-                { label: 'Email', placeholder: 'store@email.com', value: email, onChange: setEmail, kb: 'email-address' as const, icon: 'mail-outline' as const },
-                { label: 'Street / Location', placeholder: 'e.g. King Fahd Road, Riyadh', value: location, onChange: setLocation, kb: 'default' as const, icon: 'location-outline' as const },
+                { label: 'Store Name *',    placeholder: 'e.g. Abu Ali Supermarket',      value: storeName, onChange: setStoreName, kb: 'default' as const,        icon: 'storefront-outline' as const },
+                { label: 'Phone Number *',  placeholder: '+961 xx xxx xxx',               value: phone,     onChange: setPhone,     kb: 'phone-pad' as const,       icon: 'call-outline' as const },
+                { label: 'Email',           placeholder: 'store@email.com',               value: email,     onChange: setEmail,     kb: 'email-address' as const,   icon: 'mail-outline' as const },
+                { label: 'Street / Location', placeholder: 'e.g. Hamra Street, Beirut',  value: location,  onChange: setLocation,  kb: 'default' as const,         icon: 'location-outline' as const },
               ].map(f => (
                 <View key={f.label} style={styles.fieldGroup}>
                   <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{f.label}</Text>
@@ -335,7 +331,6 @@ const styles = StyleSheet.create({
   fieldInput: { flex: 1, fontSize: 15, paddingVertical: 12 },
   nextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 56, marginTop: 8 },
   nextBtnText: { fontSize: 17, color: '#FFFFFF' },
-  // PIN
   pinContent: { flex: 1, alignItems: 'center', paddingTop: 28, paddingHorizontal: 24, gap: 6 },
   pinTitle: { fontSize: 20 },
   pinSub: { fontSize: 14, textAlign: 'center', marginBottom: 8 },

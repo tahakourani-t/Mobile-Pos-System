@@ -1,23 +1,36 @@
 import { useColorScheme } from 'react-native';
 import colors from '@/constants/colors';
+import { useApp } from '@/contexts/AppContext';
 
 /**
  * Returns the design tokens for the current color scheme.
  *
- * The returned object contains all color tokens for the active palette
- * plus scheme-independent values like `radius`.
- *
- * Falls back to the light palette when no dark key is defined in
- * constants/colors.ts (the scaffold ships light-only by default).
- * When a sibling web artifact's dark tokens are synced into a `dark`
- * key, this hook will automatically switch palettes based on the
- * device's appearance setting.
+ * Priority: storeSettings.theme (light | dark | blue | system).
+ * When 'system', follows the device appearance setting.
  */
 export function useColors() {
-  const scheme = useColorScheme();
-  const palette =
-    scheme === 'dark' && 'dark' in colors
-      ? (colors as Record<string, typeof colors.light>).dark
-      : colors.light;
+  const systemScheme = useColorScheme();
+
+  // AppContext may not be mounted yet (loading screen) — guard with try/catch
+  let theme: 'light' | 'dark' | 'blue' | 'system' = 'light';
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { storeSettings } = useApp();
+    theme = storeSettings?.theme ?? 'light';
+  } catch {
+    theme = 'light';
+  }
+
+  let palette: typeof colors.light;
+  if (theme === 'system') {
+    palette = systemScheme === 'dark' ? colors.dark : colors.light;
+  } else if (theme === 'dark') {
+    palette = colors.dark;
+  } else if (theme === 'blue') {
+    palette = colors.blue;
+  } else {
+    palette = colors.light;
+  }
+
   return { ...palette, radius: colors.radius };
 }

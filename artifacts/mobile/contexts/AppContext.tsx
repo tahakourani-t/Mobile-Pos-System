@@ -35,10 +35,10 @@ const defaultSettings: StoreSettings = {
   phone: '',
   email: '',
   vatNumber: '',
-  currency: 'SAR',
-  taxRate: 15,
+  currency: 'LBP',
+  taxRate: 0,
   language: 'en',
-  theme: 'system',
+  theme: 'light',
 };
 
 const AppContext = createContext<AppContextType>({} as AppContextType);
@@ -80,7 +80,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         applyRTL(s.language);
       }
 
-      // Trial starts when onboarding completes
       if (trialVal) {
         setTrialStartDate(trialVal);
       }
@@ -120,7 +119,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TRIAL_KEY, now);
     setIsOnboardingComplete(true);
     setTrialStartDate(now);
-    // Auto-login after setup
     await AsyncStorage.setItem('is_authenticated', 'true');
     setIsAuthenticated(true);
     setUser(MOCK_USER);
@@ -162,7 +160,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (s.language) applyRTL(s.language);
   };
 
-  // Trial calculation
   const trialDaysLeft = trialStartDate
     ? Math.max(0, TRIAL_DAYS - Math.floor((Date.now() - new Date(trialStartDate).getTime()) / 86400000))
     : TRIAL_DAYS;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,6 +39,13 @@ export default function POSScreen() {
   const [printing, setPrinting] = useState(false);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+
+  // Pre-fill cash with total when checkout opens
+  useEffect(() => {
+    if (checkoutVisible) {
+      setCashInput(total.toFixed(0));
+    }
+  }, [checkoutVisible]);
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -99,10 +106,9 @@ export default function POSScreen() {
       for (const item of items) {
         await updateProduct(item.product.id, { stock: Math.max(0, item.product.stock - item.quantity) });
       }
-      addNotification({ type: 'new_order', title: `${t('newSale')} ${order.orderNumber}`, body: `${storeSettings.currency} ${total.toFixed(2)}`, read: false });
+      addNotification({ type: 'new_order', title: `${t('newSale')} ${order.orderNumber}`, body: `${storeSettings.currency} ${total.toLocaleString()}`, read: false });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Print receipt
       await printReceipt(order);
 
       clearCart();
@@ -125,11 +131,12 @@ export default function POSScreen() {
   ), [handleProductPress, getQty]);
 
   const cartHeight = cartExpanded ? 280 : 68;
+  const cur = storeSettings.currency;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       {/* Top bar */}
-      <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: topPad + 8 }]}>
+      <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: topPad + 8, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <View style={styles.searchWrap}>
           <SearchBar value={search} onChangeText={setSearch} placeholder={t('searchProducts')} />
         </View>
@@ -191,7 +198,7 @@ export default function POSScreen() {
           </View>
           <View style={styles.cartRight}>
             <Text style={[styles.cartTotal, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>
-              {storeSettings.currency} {total.toFixed(2)}
+              {cur} {total.toLocaleString()}
             </Text>
             <Ionicons name={cartExpanded ? 'chevron-down' : 'chevron-up'} size={18} color={colors.mutedForeground} />
           </View>
@@ -204,8 +211,8 @@ export default function POSScreen() {
                 <Text style={[styles.cartEmptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('addProductsToStart')}</Text>
               ) : (
                 items.map(item => (
-                  <View key={item.product.id} style={[styles.cartItem, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.cartItemName, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]} numberOfLines={1}>
+                  <View key={item.product.id} style={[styles.cartItem, { borderBottomColor: colors.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                    <Text style={[styles.cartItemName, { color: colors.foreground, fontFamily: 'Inter_500Medium', textAlign: isRTL ? 'right' : 'left' }]} numberOfLines={1}>
                       {lang === 'ar' && item.product.nameAr ? item.product.nameAr : item.product.name}
                     </Text>
                     <View style={styles.cartItemRight}>
@@ -217,7 +224,7 @@ export default function POSScreen() {
                         <Ionicons name="add" size={16} color={colors.foreground} />
                       </TouchableOpacity>
                       <Text style={[styles.cartItemPrice, { color: colors.primary, fontFamily: 'Inter_600SemiBold' }]}>
-                        {(item.product.price * item.quantity).toFixed(2)}
+                        {(item.product.price * item.quantity).toLocaleString()}
                       </Text>
                       <TouchableOpacity onPress={() => removeItem(item.product.id)}>
                         <Ionicons name="trash-outline" size={16} color={colors.destructive} />
@@ -233,7 +240,7 @@ export default function POSScreen() {
                 <Text style={[styles.holdOrderText, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{t('hold')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { if (items.length > 0) { setCashInput(''); setCheckoutVisible(true); } }}
+                onPress={() => { if (items.length > 0) { setCheckoutVisible(true); } }}
                 style={[styles.checkoutBtn, { backgroundColor: items.length > 0 ? colors.primary : colors.muted, borderRadius: colors.radius, flex: 1 }]}
                 disabled={items.length === 0}
               >
@@ -248,7 +255,7 @@ export default function POSScreen() {
       {/* ── Checkout Modal ── */}
       <Modal visible={checkoutVisible} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
             <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('checkout')}</Text>
             <TouchableOpacity onPress={() => setCheckoutVisible(false)}>
               <Ionicons name="close" size={24} color={colors.foreground} />
@@ -260,19 +267,19 @@ export default function POSScreen() {
             <View style={[styles.summaryBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Text style={[styles.summaryTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('orderSummary')}</Text>
               {items.map(i => (
-                <View key={i.product.id} style={styles.summaryRow}>
-                  <Text style={[styles.summaryItem, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]} numberOfLines={1}>
+                <View key={i.product.id} style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  <Text style={[styles.summaryItem, { color: colors.foreground, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]} numberOfLines={1}>
                     {i.quantity}× {lang === 'ar' && i.product.nameAr ? i.product.nameAr : i.product.name}
                   </Text>
-                  <Text style={[styles.summaryItemPrice, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{(i.product.price * i.quantity).toFixed(2)}</Text>
+                  <Text style={[styles.summaryItemPrice, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{(i.product.price * i.quantity).toLocaleString()}</Text>
                 </View>
               ))}
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <View style={styles.summaryRow}>
+              <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                 <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('subtotal')}</Text>
-                <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{subtotal.toFixed(2)}</Text>
+                <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{subtotal.toLocaleString()}</Text>
               </View>
-              <View style={styles.summaryRow}>
+              <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                 <View style={styles.discountRow}>
                   <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('discountPercent')}</Text>
                   <TextInput
@@ -284,16 +291,18 @@ export default function POSScreen() {
                     placeholderTextColor={colors.mutedForeground}
                   />
                 </View>
-                <Text style={[styles.summaryMeta, { color: colors.destructive, fontFamily: 'Inter_500Medium' }]}>-{discountAmount.toFixed(2)}</Text>
+                <Text style={[styles.summaryMeta, { color: colors.destructive, fontFamily: 'Inter_500Medium' }]}>-{discountAmount.toLocaleString()}</Text>
               </View>
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('tax')} ({taxRate}%)</Text>
-                <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{taxAmount.toFixed(2)}</Text>
-              </View>
+              {taxRate > 0 && (
+                <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('tax')} ({taxRate}%)</Text>
+                  <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{taxAmount.toLocaleString()}</Text>
+                </View>
+              )}
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <View style={styles.summaryRow}>
+              <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                 <Text style={[styles.totalLabel, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('total')}</Text>
-                <Text style={[styles.totalValue, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {total.toFixed(2)}</Text>
+                <Text style={[styles.totalValue, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>{cur} {total.toLocaleString()}</Text>
               </View>
             </View>
 
@@ -304,35 +313,44 @@ export default function POSScreen() {
               <Text style={[styles.cashOnlyText, { color: colors.success, fontFamily: 'Inter_600SemiBold' }]}>{t('cash')}</Text>
             </View>
 
-            {/* Cash input */}
+            {/* Cash input — pre-filled with total */}
             <View style={[styles.cashBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Text style={[styles.cashLabel, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t('cashReceived')}</Text>
+              <Text style={[styles.cashLabel, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>
+                {t('cashReceived')} ({cur})
+              </Text>
               <TextInput
-                style={[styles.cashInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius, fontFamily: 'Inter_600SemiBold', backgroundColor: colors.muted }]}
+                style={[styles.cashInput, { color: colors.foreground, borderColor: cashReceived < total && cashInput !== '' ? colors.destructive : colors.border, borderRadius: colors.radius, fontFamily: 'Inter_600SemiBold', backgroundColor: colors.muted }]}
                 value={cashInput}
                 onChangeText={setCashInput}
                 keyboardType="decimal-pad"
-                placeholder="0.00"
+                placeholder={total.toFixed(0)}
                 placeholderTextColor={colors.mutedForeground}
-                autoFocus
               />
               {/* Quick cash buttons */}
               <View style={styles.quickCashRow}>
-                {[total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10, Math.ceil(total / 50) * 50].filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).map(amt => (
-                  <TouchableOpacity
-                    key={amt}
-                    onPress={() => setCashInput(amt.toFixed(2))}
-                    style={[styles.quickCashBtn, { backgroundColor: colors.muted, borderRadius: 8, borderColor: colors.border, borderWidth: 1 }]}
-                  >
-                    <Text style={[styles.quickCashText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{amt.toFixed(0)}</Text>
-                  </TouchableOpacity>
-                ))}
+                {[total, Math.ceil(total / 5000) * 5000, Math.ceil(total / 10000) * 10000, Math.ceil(total / 50000) * 50000]
+                  .filter((v, i, a) => a.indexOf(v) === i && v >= total)
+                  .slice(0, 4)
+                  .map(amt => (
+                    <TouchableOpacity
+                      key={amt}
+                      onPress={() => setCashInput(amt.toFixed(0))}
+                      style={[styles.quickCashBtn, { backgroundColor: cashInput === amt.toFixed(0) ? colors.primary + '20' : colors.muted, borderRadius: 8, borderColor: cashInput === amt.toFixed(0) ? colors.primary : colors.border, borderWidth: 1 }]}
+                    >
+                      <Text style={[styles.quickCashText, { color: cashInput === amt.toFixed(0) ? colors.primary : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{(amt / 1000).toFixed(0)}k</Text>
+                    </TouchableOpacity>
+                  ))}
               </View>
-              {cashReceived >= total && (
-                <View style={styles.changeRow}>
+              {cashReceived > 0 && cashReceived >= total && (
+                <View style={[styles.changeRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                   <Text style={[styles.changeLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('change')}</Text>
-                  <Text style={[styles.changeValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {Math.max(0, change).toFixed(2)}</Text>
+                  <Text style={[styles.changeValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>{cur} {Math.max(0, change).toLocaleString()}</Text>
                 </View>
+              )}
+              {cashReceived > 0 && cashReceived < total && (
+                <Text style={[{ color: colors.destructive, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' }]}>
+                  {t('insufficientMsg')}
+                </Text>
               )}
             </View>
 
@@ -354,7 +372,7 @@ export default function POSScreen() {
       {/* ── Held Orders Modal ── */}
       <Modal visible={heldVisible} animationType="slide" presentationStyle="formSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
             <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('heldOrders')}</Text>
             <TouchableOpacity onPress={() => setHeldVisible(false)}>
               <Ionicons name="close" size={24} color={colors.foreground} />
@@ -388,7 +406,7 @@ export default function POSScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  topBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 12, paddingBottom: 10, borderBottomWidth: 1, alignItems: 'center' },
+  topBar: { gap: 10, paddingHorizontal: 12, paddingBottom: 10, borderBottomWidth: 1, alignItems: 'center' },
   searchWrap: { flex: 1 },
   holdBtn: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
   holdBadge: { position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -412,24 +430,24 @@ const styles = StyleSheet.create({
   cartTotal: { fontSize: 18 },
   cartItems: { flex: 1 },
   cartEmptyText: { textAlign: 'center', paddingVertical: 16, fontSize: 14 },
-  cartItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 0.5 },
+  cartItem: { alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 0.5 },
   cartItemName: { flex: 1, fontSize: 14, marginRight: 8 },
   cartItemRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   qtyNum: { fontSize: 15, minWidth: 22, textAlign: 'center' },
-  cartItemPrice: { fontSize: 14, minWidth: 50, textAlign: 'right' },
+  cartItemPrice: { fontSize: 14, minWidth: 60, textAlign: 'right' },
   cartActions: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderTopWidth: 1 },
   holdOrderBtn: { width: 70, height: 44, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4, borderWidth: 1 },
   holdOrderText: { fontSize: 13 },
   checkoutBtn: { height: 44, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   checkoutBtnText: { fontSize: 16 },
   modalRoot: { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingTop: 24, borderBottomWidth: 1 },
+  modalHeader: { alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingTop: 24, borderBottomWidth: 1 },
   modalTitle: { fontSize: 20 },
   modalContent: { padding: 20, gap: 16, paddingBottom: 40 },
   summaryBox: { padding: 16, borderWidth: 1, gap: 10 },
   summaryTitle: { fontSize: 16, marginBottom: 4 },
-  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  summaryRow: { alignItems: 'center', justifyContent: 'space-between' },
   summaryItem: { flex: 1, fontSize: 14, marginRight: 8 },
   summaryItemPrice: { fontSize: 14 },
   summaryMeta: { fontSize: 14 },
@@ -443,11 +461,11 @@ const styles = StyleSheet.create({
   cashOnlyText: { fontSize: 16 },
   cashBox: { padding: 16, borderWidth: 1, gap: 10 },
   cashLabel: { fontSize: 15 },
-  cashInput: { fontSize: 28, padding: 12, borderWidth: 1, textAlign: 'center' },
+  cashInput: { fontSize: 28, padding: 12, borderWidth: 1.5, textAlign: 'center' },
   quickCashRow: { flexDirection: 'row', gap: 8 },
   quickCashBtn: { flex: 1, paddingVertical: 9, alignItems: 'center' },
   quickCashText: { fontSize: 14 },
-  changeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  changeRow: { justifyContent: 'space-between', alignItems: 'center' },
   changeLabel: { fontSize: 15 },
   changeValue: { fontSize: 22 },
   confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 58, gap: 10 },
