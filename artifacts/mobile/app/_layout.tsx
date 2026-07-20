@@ -66,6 +66,7 @@ function RootLayoutNav() {
         <Stack.Screen name="settings"      options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="expenses"      options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="invoices"      options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="admin"         options={{ animation: 'slide_from_bottom' }} />
       </Stack>
     </AuthGuard>

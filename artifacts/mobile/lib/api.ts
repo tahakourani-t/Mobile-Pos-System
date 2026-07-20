@@ -88,6 +88,7 @@ export interface ApiStore {
   language: string;
   theme: string;
   isActive: boolean;
+  isVerified: boolean;
   planExpiry?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -169,6 +170,11 @@ export const admin = {
   deactivate: (storeId: string, adminToken: string) =>
     apiFetch<ApiStore>(`/api/admin/stores/${storeId}/deactivate`, {
       method: 'POST', body: JSON.stringify({}),
+    }, adminToken),
+
+  notify: (storeId: string, message: string, subject: string, adminToken: string) =>
+    apiFetch<{ ok: boolean; message: string }>('/api/admin/notify', {
+      method: 'POST', body: JSON.stringify({ storeId, message, subject }),
     }, adminToken),
 };
 

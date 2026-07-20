@@ -23,6 +23,7 @@ export default function MoreScreen() {
     { label: t('customers'),      icon: 'people-outline' as const,        route: '/customers',      color: '#10B981' },
     { label: t('reports'),        icon: 'bar-chart-outline' as const,     route: '/reports',        color: '#8B5CF6' },
     { label: t('expenses'),       icon: 'wallet-outline' as const,        route: '/expenses',       color: '#EF4444' },
+    { label: 'Invoices',          icon: 'receipt-outline' as const,       route: '/invoices',       color: '#0EA5E9' },
     { label: t('notifications'),  icon: 'notifications-outline' as const, route: '/notifications',  color: '#F59E0B', badge: unreadCount },
     { label: t('settings'),       icon: 'settings-outline' as const,      route: '/settings',       color: '#64748B' },
   ];
