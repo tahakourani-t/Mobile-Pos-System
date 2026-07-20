@@ -12,6 +12,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import SearchBar from '@/components/SearchBar';
 import Badge from '@/components/Badge';
+import { SkeletonRow } from '@/components/Skeleton';
 import type { Product } from '@/types';
 import { PRODUCT_CATEGORIES } from '@/constants/mockData';
 
@@ -22,7 +23,7 @@ const BLANK = {
 
 export default function ProductsScreen() {
   const colors = useColors();
-  const { products, addProduct, updateProduct, deleteProduct } = useData();
+  const { products, addProduct, updateProduct, deleteProduct, isLoading } = useData();
   const { storeSettings } = useApp();
   const { t, lang, isRTL } = useTranslation();
 
@@ -168,12 +169,18 @@ export default function ProductsScreen() {
         </ScrollView>
       </View>
 
+      {isLoading && products.length === 0 ? (
+        <ScrollView contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === 'web' ? 34 : 100 }]}>
+          {[0,1,2,3,4,5].map(i => <SkeletonRow key={i} />)}
+        </ScrollView>
+      ) : null}
       <FlatList
-        data={filtered}
+        data={isLoading && products.length === 0 ? [] : filtered}
         keyExtractor={p => p.id}
         renderItem={renderProduct}
         contentContainerStyle={[styles.list, { paddingBottom: Platform.OS === 'web' ? 34 : 100 }]}
         showsVerticalScrollIndicator={false}
+        style={isLoading && products.length === 0 ? { display: 'none' } : undefined}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="cube-outline" size={48} color={colors.mutedForeground} />

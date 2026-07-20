@@ -11,6 +11,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import StatCard from '@/components/StatCard';
 import OrderCard from '@/components/OrderCard';
 import SimpleChart from '@/components/SimpleChart';
+import { SkeletonStatRow, SkeletonOrderRow, Skeleton } from '@/components/Skeleton';
 import type { WeeklySalesPoint } from '@/types';
 
 export default function DashboardScreen() {
@@ -18,7 +19,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, unreadCount, storeSettings, trialDaysLeft, trialExpired } = useApp();
-  const { todaySales, todayOrders, todayProfit, orders, expenses } = useData();
+  const { todaySales, todayOrders, todayProfit, orders, expenses, isLoading } = useData();
   const { t, isRTL } = useTranslation();
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -107,11 +108,15 @@ export default function DashboardScreen() {
       </LinearGradient>
 
       {/* Stats */}
-      <View style={styles.statsRow}>
-        <StatCard label={t('todaySales')} value={`${storeSettings.currency} ${todaySales.toFixed(0)}`} icon="cash-outline" trend={+5.2} color={colors.primary} />
-        <StatCard label={t('todayOrders')} value={String(todayOrders)} icon="receipt-outline" trend={+2} color={colors.success} />
-        <StatCard label={t('todayProfit')} value={`${storeSettings.currency} ${todayProfit.toFixed(0)}`} icon="trending-up-outline" trend={+8.1} color="#8B5CF6" />
-      </View>
+      {isLoading ? (
+        <SkeletonStatRow />
+      ) : (
+        <View style={styles.statsRow}>
+          <StatCard label={t('todaySales')} value={`${storeSettings.currency} ${todaySales.toFixed(0)}`} icon="cash-outline" trend={+5.2} color={colors.primary} />
+          <StatCard label={t('todayOrders')} value={String(todayOrders)} icon="receipt-outline" trend={+2} color={colors.success} />
+          <StatCard label={t('todayProfit')} value={`${storeSettings.currency} ${todayProfit.toFixed(0)}`} icon="trending-up-outline" trend={+8.1} color="#8B5CF6" />
+        </View>
+      )}
 
       {/* Quick Actions */}
       <View style={styles.section}>
@@ -145,7 +150,9 @@ export default function DashboardScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('recentOrders')}</Text>
           <TouchableOpacity onPress={() => router.push('/reports')}><Text style={[styles.viewAll, { color: colors.primary, fontFamily: 'Inter_500Medium' }]}>{t('viewAll')}</Text></TouchableOpacity>
         </View>
-        {recentOrders.length === 0 ? (
+        {isLoading ? (
+          [0,1,2,3].map(i => <SkeletonOrderRow key={i} />)
+        ) : recentOrders.length === 0 ? (
           <Text style={[styles.noData, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noData')}</Text>
         ) : (
           recentOrders.map(o => <OrderCard key={o.id} order={o} />)

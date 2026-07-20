@@ -11,6 +11,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import ProductCard from '@/components/ProductCard';
 import SearchBar from '@/components/SearchBar';
+import { SkeletonProduct } from '@/components/Skeleton';
 import { buildReceiptHTML } from '@/utils/receipt';
 import type { Product } from '@/types';
 import { PRODUCT_CATEGORIES } from '@/constants/mockData';
@@ -18,7 +19,7 @@ import { PRODUCT_CATEGORIES } from '@/constants/mockData';
 export default function POSScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { products } = useData();
+  const { products, isLoading: dataLoading } = useData();
   const { addOrder, updateProduct } = useData();
   const { user, storeSettings, addNotification } = useApp();
   const { t, lang, isRTL } = useTranslation();
@@ -169,21 +170,27 @@ export default function POSScreen() {
       </View>
 
       {/* Products grid */}
-      <FlatList
-        data={filtered}
-        keyExtractor={item => item.id}
-        renderItem={renderProductItem}
-        numColumns={2}
-        contentContainerStyle={[styles.grid, { paddingBottom: cartHeight + 16 }]}
-        columnWrapperStyle={styles.row}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="cube-outline" size={48} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noProductsFound')}</Text>
-          </View>
-        }
-      />
+      {dataLoading && products.length === 0 ? (
+        <ScrollView contentContainerStyle={[styles.grid, { paddingBottom: cartHeight + 16, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }]}>
+          {[0,1,2,3,4,5,6,7].map(i => <SkeletonProduct key={i} />)}
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={item => item.id}
+          renderItem={renderProductItem}
+          numColumns={2}
+          contentContainerStyle={[styles.grid, { paddingBottom: cartHeight + 16 }]}
+          columnWrapperStyle={styles.row}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="cube-outline" size={48} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noProductsFound')}</Text>
+            </View>
+          }
+        />
+      )}
 
       {/* Cart panel */}
       <View style={[styles.cartPanel, { backgroundColor: colors.card, borderTopColor: colors.border, height: cartHeight, bottom: Platform.OS === 'web' ? 84 : insets.bottom + 64 }]}>
