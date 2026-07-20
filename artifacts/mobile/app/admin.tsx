@@ -211,19 +211,25 @@ export default function AdminScreen() {
     );
   }
 
-  // ── No token — should not happen for superadmin, but handle gracefully ────
+  // ── No token — regular user navigated here manually; just send them back ──
   if (!token) {
     return (
       <View style={[s.root, s.center, { backgroundColor: colors.background }]}>
-        <Ionicons name="lock-closed-outline" size={48} color={colors.mutedForeground} />
-        <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_500Medium', marginTop: 12, textAlign: 'center' }]}>
-          Admin access requires signing in{'\n'}with an admin account.
+        <View style={[{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center' }]}>
+          <Ionicons name="lock-closed-outline" size={36} color={colors.mutedForeground} />
+        </View>
+        <Text style={[{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 20, marginTop: 16, textAlign: 'center' }]}>
+          Admin Access Only
+        </Text>
+        <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 14, textAlign: 'center', lineHeight: 22, marginTop: 6 }]}>
+          This panel is restricted to admin accounts.{'\n'}Sign in with your admin credentials.
         </Text>
         <TouchableOpacity
-          onPress={() => router.replace('/login')}
-          style={[s.goLoginBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
+          style={[s.goLoginBtn, { backgroundColor: colors.muted, borderRadius: colors.radius }]}
         >
-          <Text style={[{ color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 }]}>Go to Login</Text>
+          <Ionicons name="arrow-back" size={16} color={colors.foreground} />
+          <Text style={[{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }]}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -594,7 +600,7 @@ const s = StyleSheet.create({
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   list:    { padding: 16, gap: 14 },
 
-  goLoginBtn: { paddingHorizontal: 28, paddingVertical: 14, marginTop: 8 },
+  goLoginBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 28, paddingVertical: 14, marginTop: 16 },
 
   // header
   header: {
