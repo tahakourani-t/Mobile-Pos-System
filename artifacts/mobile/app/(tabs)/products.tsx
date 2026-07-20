@@ -129,7 +129,7 @@ export default function ProductsScreen() {
       {/* Category filter */}
       <View style={[styles.catBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
-          {['All', ...PRODUCT_CATEGORIES].map(cat => (
+          {PRODUCT_CATEGORIES.map(cat => (
             <TouchableOpacity key={cat} onPress={() => setFilterCat(cat)} style={[styles.catChip, { backgroundColor: filterCat === cat ? colors.primary : colors.muted, borderRadius: 100, borderColor: filterCat === cat ? colors.primary : colors.border, borderWidth: 1 }]}>
               <Text style={[styles.catLabel, { color: filterCat === cat ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{cat}</Text>
             </TouchableOpacity>

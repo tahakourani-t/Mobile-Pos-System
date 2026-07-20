@@ -22,22 +22,30 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, trialExpired } = useApp();
+  const { isAuthenticated, trialExpired, isOnboardingComplete } = useApp();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    const inLogin = segments[0] === 'login';
-    const inPaywall = segments[0] === 'paywall';
+    const current = segments[0] as string | undefined;
+    const inOnboarding = current === 'onboarding';
+    const inLogin      = current === 'login';
+    const inPaywall    = current === 'paywall';
 
-    if (!isAuthenticated && !inLogin) {
+    if (!isOnboardingComplete && !inOnboarding) {
+      // First launch — go to onboarding
+      router.replace('/onboarding');
+    } else if (isOnboardingComplete && !isAuthenticated && !inLogin) {
+      // Onboarding done, needs PIN login
       router.replace('/login');
-    } else if (isAuthenticated && trialExpired && !inPaywall) {
+    } else if (isOnboardingComplete && isAuthenticated && trialExpired && !inPaywall) {
+      // Trial over — paywall
       router.replace('/paywall');
-    } else if (isAuthenticated && !trialExpired && (inLogin || inPaywall)) {
+    } else if (isOnboardingComplete && isAuthenticated && !trialExpired && (inLogin || inOnboarding || inPaywall)) {
+      // All good — go to app
       router.replace('/(tabs)');
     }
-  }, [isAuthenticated, trialExpired, segments]);
+  }, [isAuthenticated, trialExpired, isOnboardingComplete, segments]);
 
   return <>{children}</>;
 }
@@ -46,15 +54,16 @@ function RootLayoutNav() {
   return (
     <AuthGuard>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="login" options={{ animation: 'fade' }} />
-        <Stack.Screen name="paywall" options={{ animation: 'fade' }} />
+        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+        <Stack.Screen name="login"      options={{ animation: 'fade' }} />
+        <Stack.Screen name="paywall"    options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="inventory" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="customers" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="reports" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="inventory"     options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="customers"     options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports"       options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings"      options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="expenses" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="expenses"      options={{ animation: 'slide_from_right' }} />
       </Stack>
     </AuthGuard>
   );
