@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useData } from '@/contexts/DataContext';
+import { useTranslation } from '@/hooks/useTranslation';
 import AppHeader from '@/components/AppHeader';
 import SearchBar from '@/components/SearchBar';
 import type { Customer } from '@/types';
@@ -14,7 +15,8 @@ const BLANK: Omit<Customer, 'id' | 'createdAt' | 'totalPurchases' | 'totalOrders
 
 export default function CustomersScreen() {
   const colors = useColors();
-  const { customers, addCustomer, updateCustomer } = useData();
+  const { customers, addCustomer } = useData();
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [detailModal, setDetailModal] = useState(false);
   const [addModal, setAddModal] = useState(false);
@@ -28,16 +30,15 @@ export default function CustomersScreen() {
 
   const topCustomers = useMemo(() => [...customers].sort((a, b) => b.totalPurchases - a.totalPurchases).slice(0, 3), [customers]);
 
-  const openAdd = () => { setForm(BLANK); setAddModal(true); };
-
   const openDetail = (c: Customer) => { setSelected(c); setDetailModal(true); };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { Alert.alert('Validation', 'Name is required.'); return; }
-    if (!form.phone.trim()) { Alert.alert('Validation', 'Phone is required.'); return; }
+    if (!form.name.trim()) { Alert.alert(t('validation'), t('nameRequired')); return; }
+    if (!form.phone.trim()) { Alert.alert(t('validation'), t('phoneRequired')); return; }
     await addCustomer(form);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setAddModal(false);
+    setForm(BLANK);
   };
 
   const renderCustomer = ({ item }: { item: Customer }) => (
@@ -53,28 +54,35 @@ export default function CustomersScreen() {
       </View>
       <View style={styles.right}>
         <Text style={[styles.total, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>{item.totalPurchases.toFixed(0)}</Text>
-        <Text style={[styles.orders, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{item.totalOrders} orders</Text>
+        <Text style={[styles.ordersCount, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{item.totalOrders} {t('orders').toLowerCase()}</Text>
       </View>
     </TouchableOpacity>
   );
 
+  const formFields = [
+    { label: t('fullName'),    key: 'name',    kbType: 'default' as const },
+    { label: t('phone'),       key: 'phone',   kbType: 'phone-pad' as const },
+    { label: t('email'),       key: 'email',   kbType: 'email-address' as const },
+    { label: t('address'),     key: 'address', kbType: 'default' as const },
+    { label: t('notes'),       key: 'notes',   kbType: 'default' as const },
+  ];
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <AppHeader
-        title="Customers"
+        title={t('customers')}
         subtitle={`${customers.length} total`}
         rightActions={
-          <TouchableOpacity onPress={openAdd} style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
+          <TouchableOpacity onPress={() => { setForm(BLANK); setAddModal(true); }} style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
             <Ionicons name="add" size={22} color="#FFFFFF" />
           </TouchableOpacity>
         }
       />
-      <View style={styles.searchWrap}><SearchBar value={search} onChangeText={setSearch} placeholder="Search by name or phone…" /></View>
+      <View style={styles.searchWrap}><SearchBar value={search} onChangeText={setSearch} placeholder={t('searchCustomers')} /></View>
 
-      {/* Top customers */}
       {!search && (
         <View style={styles.topSection}>
-          <Text style={[styles.topTitle, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>TOP CUSTOMERS</Text>
+          <Text style={[styles.topTitle, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{t('topCustomers')}</Text>
           <View style={styles.topRow}>
             {topCustomers.map((c, i) => (
               <TouchableOpacity key={c.id} onPress={() => openDetail(c)} style={[styles.topCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -101,18 +109,18 @@ export default function CustomersScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="people-outline" size={48} color={colors.mutedForeground} />
-            <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 15 }]}>No customers found</Text>
+            <Text style={[{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 15 }]}>{t('noCustomers')}</Text>
           </View>
         }
       />
 
-      {/* Customer Detail */}
+      {/* Detail */}
       <Modal visible={detailModal} animationType="slide" presentationStyle="pageSheet">
         {selected && (
           <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
               <TouchableOpacity onPress={() => setDetailModal(false)}><Ionicons name="close" size={24} color={colors.foreground} /></TouchableOpacity>
-              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Customer Details</Text>
+              <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('customerDetails')}</Text>
               <View style={{ width: 24 }} />
             </View>
             <ScrollView contentContainerStyle={styles.detailContent}>
@@ -127,9 +135,9 @@ export default function CustomersScreen() {
               </View>
               <View style={styles.statsRow}>
                 {[
-                  { label: 'Total Spent', value: selected.totalPurchases.toFixed(0), icon: 'cash-outline' as const, color: colors.primary },
-                  { label: 'Orders', value: String(selected.totalOrders), icon: 'receipt-outline' as const, color: colors.success },
-                  { label: 'Points', value: String(selected.points), icon: 'star-outline' as const, color: colors.warning },
+                  { label: t('totalSpent'), value: selected.totalPurchases.toFixed(0), icon: 'cash-outline' as const, color: colors.primary },
+                  { label: t('orders'),     value: String(selected.totalOrders),        icon: 'receipt-outline' as const, color: colors.success },
+                  { label: t('points'),     value: String(selected.points),             icon: 'star-outline' as const, color: colors.warning },
                 ].map(s => (
                   <View key={s.label} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius - 2 }]}>
                     <Ionicons name={s.icon} size={18} color={s.color} />
@@ -144,7 +152,7 @@ export default function CustomersScreen() {
               {selected.credit > 0 && (
                 <View style={[styles.creditBox, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40', borderRadius: colors.radius }]}>
                   <Ionicons name="wallet-outline" size={20} color={colors.warning} />
-                  <Text style={[styles.creditText, { color: colors.warning, fontFamily: 'Inter_600SemiBold' }]}>Store Credit: {selected.credit.toFixed(2)}</Text>
+                  <Text style={[styles.creditText, { color: colors.warning, fontFamily: 'Inter_600SemiBold' }]}>{t('storeCredit')}: {selected.credit.toFixed(2)}</Text>
                 </View>
               )}
             </ScrollView>
@@ -152,25 +160,25 @@ export default function CustomersScreen() {
         )}
       </Modal>
 
-      {/* Add Customer */}
+      {/* Add */}
       <Modal visible={addModal} animationType="slide" presentationStyle="formSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
             <TouchableOpacity onPress={() => setAddModal(false)}><Ionicons name="close" size={24} color={colors.foreground} /></TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Add Customer</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('addCustomer')}</Text>
             <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
-              <Text style={[styles.saveBtnText, { fontFamily: 'Inter_600SemiBold' }]}>Save</Text>
+              <Text style={[styles.saveBtnText, { fontFamily: 'Inter_600SemiBold' }]}>{t('save')}</Text>
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.formContent}>
-            {[{ label: 'Full Name *', key: 'name' }, { label: 'Phone *', key: 'phone' }, { label: 'Email', key: 'email' }, { label: 'Address', key: 'address' }, { label: 'Notes', key: 'notes' }].map(f => (
+            {formFields.map(f => (
               <View key={f.key} style={styles.fieldGroup}>
                 <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{f.label}</Text>
                 <TextInput
                   style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular' }]}
                   value={(form as any)[f.key]}
                   onChangeText={v => setForm(prev => ({ ...prev, [f.key]: v }))}
-                  keyboardType={f.key === 'phone' ? 'phone-pad' : f.key === 'email' ? 'email-address' : 'default'}
+                  keyboardType={f.kbType}
                   placeholderTextColor={colors.mutedForeground}
                 />
               </View>
@@ -203,7 +211,7 @@ const styles = StyleSheet.create({
   phone: { fontSize: 13, marginTop: 2 },
   right: { alignItems: 'flex-end', gap: 2 },
   total: { fontSize: 16 },
-  orders: { fontSize: 12 },
+  ordersCount: { fontSize: 12 },
   addBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   empty: { alignItems: 'center', paddingVertical: 60, gap: 10 },
   modalRoot: { flex: 1 },

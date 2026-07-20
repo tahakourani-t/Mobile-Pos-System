@@ -3,16 +3,17 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Print from 'expo-print';
 import { useColors } from '@/hooks/useColors';
 import { useCart } from '@/contexts/CartContext';
 import { useData } from '@/contexts/DataContext';
 import { useApp } from '@/contexts/AppContext';
+import { useTranslation } from '@/hooks/useTranslation';
 import ProductCard from '@/components/ProductCard';
 import SearchBar from '@/components/SearchBar';
+import { buildReceiptHTML } from '@/utils/receipt';
 import type { Product } from '@/types';
 import { PRODUCT_CATEGORIES } from '@/constants/mockData';
-
-type PaymentMethod = 'cash' | 'card' | 'custom';
 
 export default function POSScreen() {
   const colors = useColors();
@@ -20,23 +21,32 @@ export default function POSScreen() {
   const { products } = useData();
   const { addOrder, updateProduct } = useData();
   const { user, storeSettings, addNotification } = useApp();
-  const { items, addItem, removeItem, updateQuantity, clearCart, discountPercent, setDiscountPercent, taxRate, subtotal, discountAmount, taxAmount, total, itemCount, heldOrders, holdOrder, resumeOrder } = useCart();
+  const { t, lang, isRTL } = useTranslation();
+  const {
+    items, addItem, removeItem, updateQuantity, clearCart,
+    discountPercent, setDiscountPercent, taxRate,
+    subtotal, discountAmount, taxAmount, total, itemCount,
+    heldOrders, holdOrder, resumeOrder,
+  } = useCart();
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [cartExpanded, setCartExpanded] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [heldVisible, setHeldVisible] = useState(false);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
   const [cashInput, setCashInput] = useState('');
   const [discountInput, setDiscountInput] = useState('');
+  const [printing, setPrinting] = useState(false);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const filtered = useMemo(() => {
     return products.filter(p => {
       const matchCat = category === 'All' || p.category === category;
-      const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()));
+      const matchSearch = !search
+        || p.name.toLowerCase().includes(search.toLowerCase())
+        || (p.nameAr && p.nameAr.includes(search))
+        || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()));
       return matchCat && matchSearch && p.isActive;
     });
   }, [products, category, search]);
@@ -47,7 +57,7 @@ export default function POSScreen() {
 
   const handleProductPress = (product: Product) => {
     if (product.stock === 0) {
-      Alert.alert('Out of Stock', `${product.name} is out of stock.`);
+      Alert.alert(t('outOfStock'), `${product.name} ${t('outOfStockMsg')}`);
       return;
     }
     addItem(product);
@@ -57,38 +67,54 @@ export default function POSScreen() {
   const cashReceived = parseFloat(cashInput) || 0;
   const change = cashReceived - total;
 
+  const printReceipt = async (order: Parameters<typeof buildReceiptHTML>[0]) => {
+    try {
+      const html = buildReceiptHTML(order, storeSettings, lang);
+      await Print.printAsync({ html, printerUrl: undefined });
+    } catch {
+      // Printer not connected or user dismissed — silently ok
+    }
+  };
+
   const handleConfirmCheckout = async () => {
-    if (payMethod === 'cash' && cashReceived < total) {
-      Alert.alert('Insufficient', 'Cash received is less than the total amount.');
+    if (cashReceived < total) {
+      Alert.alert(t('insufficient'), t('insufficientMsg'));
       return;
     }
     try {
+      setPrinting(true);
       const order = await addOrder({
         items: items.map(i => ({ ...i })),
         subtotal,
         discountAmount,
         taxAmount,
         total,
-        paymentMethod: payMethod,
-        cashReceived: payMethod === 'cash' ? cashReceived : undefined,
-        change: payMethod === 'cash' ? Math.max(0, change) : undefined,
+        paymentMethod: 'cash',
+        cashReceived,
+        change: Math.max(0, change),
         status: 'completed',
         cashier: user?.name ?? 'Cashier',
       });
-      // Update stock
+      // Deduct stock
       for (const item of items) {
         await updateProduct(item.product.id, { stock: Math.max(0, item.product.stock - item.quantity) });
       }
-      addNotification({ type: 'new_order', title: `New Order ${order.orderNumber}`, body: `${storeSettings.currency} ${total.toFixed(2)} — ${payMethod}`, read: false });
+      addNotification({ type: 'new_order', title: `${t('newSale')} ${order.orderNumber}`, body: `${storeSettings.currency} ${total.toFixed(2)}`, read: false });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Print receipt
+      await printReceipt(order);
+
       clearCart();
       setCheckoutVisible(false);
       setCashInput('');
       setDiscountInput('');
+      setDiscountPercent(0);
       setCartExpanded(false);
-      Alert.alert('Success', `Order ${order.orderNumber} completed!`);
     } catch {
-      Alert.alert('Error', 'Failed to complete the order.');
+      Alert.alert(t('error'), 'Failed to complete the order.');
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -105,7 +131,7 @@ export default function POSScreen() {
       {/* Top bar */}
       <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: topPad + 8 }]}>
         <View style={styles.searchWrap}>
-          <SearchBar value={search} onChangeText={setSearch} placeholder="Search products or SKU…" />
+          <SearchBar value={search} onChangeText={setSearch} placeholder={t('searchProducts')} />
         </View>
         <TouchableOpacity
           onPress={() => setHeldVisible(true)}
@@ -147,24 +173,20 @@ export default function POSScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="cube-outline" size={48} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>No products found</Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noProductsFound')}</Text>
           </View>
         }
       />
 
       {/* Cart panel */}
       <View style={[styles.cartPanel, { backgroundColor: colors.card, borderTopColor: colors.border, height: cartHeight, bottom: Platform.OS === 'web' ? 84 : insets.bottom + 64 }]}>
-        <TouchableOpacity
-          style={styles.cartToggle}
-          onPress={() => setCartExpanded(e => !e)}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.cartToggle} onPress={() => setCartExpanded(e => !e)} activeOpacity={0.8}>
           <View style={styles.cartSummary}>
             <View style={[styles.cartBadge, { backgroundColor: colors.primary }]}>
               <Text style={[styles.cartBadgeText, { fontFamily: 'Inter_700Bold' }]}>{itemCount}</Text>
             </View>
             <Text style={[styles.cartLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
-              {itemCount === 0 ? 'Cart is empty' : `${itemCount} item${itemCount > 1 ? 's' : ''}`}
+              {itemCount === 0 ? t('cartEmpty') : `${itemCount} ${itemCount === 1 ? t('item') : t('items')}`}
             </Text>
           </View>
           <View style={styles.cartRight}>
@@ -179,11 +201,13 @@ export default function POSScreen() {
           <>
             <ScrollView style={styles.cartItems} showsVerticalScrollIndicator={false}>
               {items.length === 0 ? (
-                <Text style={[styles.cartEmpty, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Add products to start a sale</Text>
+                <Text style={[styles.cartEmptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('addProductsToStart')}</Text>
               ) : (
                 items.map(item => (
                   <View key={item.product.id} style={[styles.cartItem, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.cartItemName, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]} numberOfLines={1}>{item.product.name}</Text>
+                    <Text style={[styles.cartItemName, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]} numberOfLines={1}>
+                      {lang === 'ar' && item.product.nameAr ? item.product.nameAr : item.product.name}
+                    </Text>
                     <View style={styles.cartItemRight}>
                       <TouchableOpacity onPress={() => updateQuantity(item.product.id, item.quantity - 1)} style={[styles.qtyBtn, { backgroundColor: colors.muted, borderRadius: 8 }]}>
                         <Ionicons name="remove" size={16} color={colors.foreground} />
@@ -206,7 +230,7 @@ export default function POSScreen() {
             <View style={[styles.cartActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity onPress={() => holdOrder()} style={[styles.holdOrderBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
                 <Ionicons name="pause-outline" size={18} color={colors.mutedForeground} />
-                <Text style={[styles.holdOrderText, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>Hold</Text>
+                <Text style={[styles.holdOrderText, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{t('hold')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => { if (items.length > 0) { setCashInput(''); setCheckoutVisible(true); } }}
@@ -214,37 +238,43 @@ export default function POSScreen() {
                 disabled={items.length === 0}
               >
                 <Ionicons name="checkmark-circle-outline" size={20} color={items.length > 0 ? '#FFFFFF' : colors.mutedForeground} />
-                <Text style={[styles.checkoutBtnText, { color: items.length > 0 ? '#FFFFFF' : colors.mutedForeground, fontFamily: 'Inter_600SemiBold' }]}>Checkout</Text>
+                <Text style={[styles.checkoutBtnText, { color: items.length > 0 ? '#FFFFFF' : colors.mutedForeground, fontFamily: 'Inter_600SemiBold' }]}>{t('checkout')}</Text>
               </TouchableOpacity>
             </View>
           </>
         )}
       </View>
 
-      {/* Checkout Modal */}
+      {/* ── Checkout Modal ── */}
       <Modal visible={checkoutVisible} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Checkout</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('checkout')}</Text>
             <TouchableOpacity onPress={() => setCheckoutVisible(false)}>
               <Ionicons name="close" size={24} color={colors.foreground} />
             </TouchableOpacity>
           </View>
+
           <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             {/* Order summary */}
             <View style={[styles.summaryBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Text style={[styles.summaryTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>Order Summary</Text>
+              <Text style={[styles.summaryTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('orderSummary')}</Text>
               {items.map(i => (
                 <View key={i.product.id} style={styles.summaryRow}>
-                  <Text style={[styles.summaryItem, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]} numberOfLines={1}>{i.quantity}× {i.product.name}</Text>
+                  <Text style={[styles.summaryItem, { color: colors.foreground, fontFamily: 'Inter_400Regular' }]} numberOfLines={1}>
+                    {i.quantity}× {lang === 'ar' && i.product.nameAr ? i.product.nameAr : i.product.name}
+                  </Text>
                   <Text style={[styles.summaryItemPrice, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{(i.product.price * i.quantity).toFixed(2)}</Text>
                 </View>
               ))}
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <View style={styles.summaryRow}><Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Subtotal</Text><Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{subtotal.toFixed(2)}</Text></View>
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('subtotal')}</Text>
+                <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{subtotal.toFixed(2)}</Text>
+              </View>
               <View style={styles.summaryRow}>
                 <View style={styles.discountRow}>
-                  <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Discount %</Text>
+                  <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('discountPercent')}</Text>
                   <TextInput
                     style={[styles.discountInput, { color: colors.foreground, borderColor: colors.border, borderRadius: 8, fontFamily: 'Inter_400Regular', backgroundColor: colors.muted }]}
                     value={discountInput}
@@ -256,63 +286,76 @@ export default function POSScreen() {
                 </View>
                 <Text style={[styles.summaryMeta, { color: colors.destructive, fontFamily: 'Inter_500Medium' }]}>-{discountAmount.toFixed(2)}</Text>
               </View>
-              <View style={styles.summaryRow}><Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Tax ({taxRate}%)</Text><Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{taxAmount.toFixed(2)}</Text></View>
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <View style={styles.summaryRow}><Text style={[styles.totalLabel, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Total</Text><Text style={[styles.totalValue, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {total.toFixed(2)}</Text></View>
-            </View>
-
-            {/* Payment method */}
-            <Text style={[styles.payLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>Payment Method</Text>
-            <View style={styles.payMethods}>
-              {(['cash', 'card', 'custom'] as PaymentMethod[]).map(m => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setPayMethod(m)}
-                  style={[styles.payMethod, { backgroundColor: payMethod === m ? colors.primary : colors.card, borderColor: payMethod === m ? colors.primary : colors.border, borderRadius: colors.radius }]}
-                >
-                  <Ionicons name={m === 'cash' ? 'cash-outline' : m === 'card' ? 'card-outline' : 'wallet-outline'} size={22} color={payMethod === m ? '#FFFFFF' : colors.foreground} />
-                  <Text style={[styles.payMethodText, { color: payMethod === m ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{m.charAt(0).toUpperCase() + m.slice(1)}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {payMethod === 'cash' && (
-              <View style={[styles.cashBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                <Text style={[styles.cashLabel, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>Cash Received</Text>
-                <TextInput
-                  style={[styles.cashInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius, fontFamily: 'Inter_600SemiBold', backgroundColor: colors.muted }]}
-                  value={cashInput}
-                  onChangeText={setCashInput}
-                  keyboardType="decimal-pad"
-                  placeholder={`0.00`}
-                  placeholderTextColor={colors.mutedForeground}
-                />
-                {cashReceived >= total && (
-                  <View style={styles.changeRow}>
-                    <Text style={[styles.changeLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Change</Text>
-                    <Text style={[styles.changeValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {Math.max(0, change).toFixed(2)}</Text>
-                  </View>
-                )}
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryMeta, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('tax')} ({taxRate}%)</Text>
+                <Text style={[styles.summaryMeta, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{taxAmount.toFixed(2)}</Text>
               </View>
-            )}
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <View style={styles.summaryRow}>
+                <Text style={[styles.totalLabel, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('total')}</Text>
+                <Text style={[styles.totalValue, { color: colors.primary, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {total.toFixed(2)}</Text>
+              </View>
+            </View>
+
+            {/* Payment method — cash only */}
+            <Text style={[styles.payLabel, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('paymentMethod')}</Text>
+            <View style={[styles.cashOnlyBadge, { backgroundColor: colors.success + '15', borderColor: colors.success + '40', borderRadius: colors.radius }]}>
+              <Ionicons name="cash-outline" size={20} color={colors.success} />
+              <Text style={[styles.cashOnlyText, { color: colors.success, fontFamily: 'Inter_600SemiBold' }]}>{t('cash')}</Text>
+            </View>
+
+            {/* Cash input */}
+            <View style={[styles.cashBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+              <Text style={[styles.cashLabel, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t('cashReceived')}</Text>
+              <TextInput
+                style={[styles.cashInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius, fontFamily: 'Inter_600SemiBold', backgroundColor: colors.muted }]}
+                value={cashInput}
+                onChangeText={setCashInput}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={colors.mutedForeground}
+                autoFocus
+              />
+              {/* Quick cash buttons */}
+              <View style={styles.quickCashRow}>
+                {[total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10, Math.ceil(total / 50) * 50].filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).map(amt => (
+                  <TouchableOpacity
+                    key={amt}
+                    onPress={() => setCashInput(amt.toFixed(2))}
+                    style={[styles.quickCashBtn, { backgroundColor: colors.muted, borderRadius: 8, borderColor: colors.border, borderWidth: 1 }]}
+                  >
+                    <Text style={[styles.quickCashText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{amt.toFixed(0)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {cashReceived >= total && (
+                <View style={styles.changeRow}>
+                  <Text style={[styles.changeLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('change')}</Text>
+                  <Text style={[styles.changeValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>{storeSettings.currency} {Math.max(0, change).toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
 
             <TouchableOpacity
               onPress={handleConfirmCheckout}
-              style={[styles.confirmBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+              disabled={printing}
+              style={[styles.confirmBtn, { backgroundColor: printing ? colors.muted : colors.primary, borderRadius: colors.radius }]}
               activeOpacity={0.85}
             >
-              <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
-              <Text style={[styles.confirmBtnText, { fontFamily: 'Inter_700Bold' }]}>Confirm Payment</Text>
+              <Ionicons name={printing ? 'print-outline' : 'checkmark-circle'} size={22} color="#FFFFFF" />
+              <Text style={[styles.confirmBtnText, { fontFamily: 'Inter_700Bold' }]}>
+                {printing ? t('printingReceipt') : t('confirmPayment')}
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>
 
-      {/* Held orders modal */}
+      {/* ── Held Orders Modal ── */}
       <Modal visible={heldVisible} animationType="slide" presentationStyle="formSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Held Orders</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('heldOrders')}</Text>
             <TouchableOpacity onPress={() => setHeldVisible(false)}>
               <Ionicons name="close" size={24} color={colors.foreground} />
             </TouchableOpacity>
@@ -321,17 +364,17 @@ export default function POSScreen() {
             {heldOrders.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="pause-circle-outline" size={48} color={colors.mutedForeground} />
-                <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>No held orders</Text>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noHeldOrders')}</Text>
               </View>
             ) : (
               heldOrders.map(h => (
                 <View key={h.id} style={[styles.heldCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.heldTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{h.items.length} item{h.items.length > 1 ? 's' : ''}</Text>
+                    <Text style={[styles.heldTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{h.items.length} {h.items.length === 1 ? t('item') : t('items')}</Text>
                     {h.note ? <Text style={[styles.heldNote, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{h.note}</Text> : null}
                   </View>
                   <TouchableOpacity onPress={() => { resumeOrder(h.id); setHeldVisible(false); }} style={[styles.resumeBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
-                    <Text style={[styles.resumeText, { fontFamily: 'Inter_600SemiBold' }]}>Resume</Text>
+                    <Text style={[styles.resumeText, { fontFamily: 'Inter_600SemiBold' }]}>{t('resume')}</Text>
                   </TouchableOpacity>
                 </View>
               ))
@@ -359,7 +402,7 @@ const styles = StyleSheet.create({
   productCell: { flex: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 15 },
-  cartPanel: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 0 },
+  cartPanel: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1, paddingHorizontal: 12 },
   cartToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 52, paddingTop: 8 },
   cartSummary: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cartBadge: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
@@ -368,7 +411,7 @@ const styles = StyleSheet.create({
   cartRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cartTotal: { fontSize: 18 },
   cartItems: { flex: 1 },
-  cartEmpty: { textAlign: 'center', paddingVertical: 16, fontSize: 14 },
+  cartEmptyText: { textAlign: 'center', paddingVertical: 16, fontSize: 14 },
   cartItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 0.5 },
   cartItemName: { flex: 1, fontSize: 14, marginRight: 8 },
   cartItemRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -396,16 +439,18 @@ const styles = StyleSheet.create({
   discountRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   discountInput: { width: 60, height: 32, paddingHorizontal: 8, fontSize: 14, borderWidth: 1, textAlign: 'center' },
   payLabel: { fontSize: 16 },
-  payMethods: { flexDirection: 'row', gap: 10 },
-  payMethod: { flex: 1, alignItems: 'center', paddingVertical: 14, gap: 6, borderWidth: 1 },
-  payMethodText: { fontSize: 13 },
+  cashOnlyBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderWidth: 1 },
+  cashOnlyText: { fontSize: 16 },
   cashBox: { padding: 16, borderWidth: 1, gap: 10 },
   cashLabel: { fontSize: 15 },
-  cashInput: { fontSize: 24, padding: 12, borderWidth: 1, textAlign: 'center' },
+  cashInput: { fontSize: 28, padding: 12, borderWidth: 1, textAlign: 'center' },
+  quickCashRow: { flexDirection: 'row', gap: 8 },
+  quickCashBtn: { flex: 1, paddingVertical: 9, alignItems: 'center' },
+  quickCashText: { fontSize: 14 },
   changeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   changeLabel: { fontSize: 15 },
-  changeValue: { fontSize: 20 },
-  confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 56, gap: 10 },
+  changeValue: { fontSize: 22 },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 58, gap: 10 },
   confirmBtnText: { fontSize: 18, color: '#FFFFFF' },
   heldCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, gap: 12, marginBottom: 10 },
   heldTitle: { fontSize: 15 },

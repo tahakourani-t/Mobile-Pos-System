@@ -22,18 +22,22 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, trialExpired } = useApp();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    const inAuthGroup = segments[0] === 'login';
-    if (!isAuthenticated && !inAuthGroup) {
+    const inLogin = segments[0] === 'login';
+    const inPaywall = segments[0] === 'paywall';
+
+    if (!isAuthenticated && !inLogin) {
       router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
+    } else if (isAuthenticated && trialExpired && !inPaywall) {
+      router.replace('/paywall');
+    } else if (isAuthenticated && !trialExpired && (inLogin || inPaywall)) {
       router.replace('/(tabs)');
     }
-  }, [isAuthenticated, segments]);
+  }, [isAuthenticated, trialExpired, segments]);
 
   return <>{children}</>;
 }
@@ -43,13 +47,14 @@ function RootLayoutNav() {
     <AuthGuard>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="login" options={{ animation: 'fade' }} />
+        <Stack.Screen name="paywall" options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="inventory" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="customers" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="reports" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="notifications" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="expenses" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="inventory" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="customers" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="expenses" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </AuthGuard>
   );

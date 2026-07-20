@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useData } from '@/contexts/DataContext';
+import { useTranslation } from '@/hooks/useTranslation';
 import AppHeader from '@/components/AppHeader';
 import SearchBar from '@/components/SearchBar';
 import Badge from '@/components/Badge';
@@ -12,6 +13,7 @@ import type { Product } from '@/types';
 export default function InventoryScreen() {
   const colors = useColors();
   const { products, updateProduct } = useData();
+  const { t, lang } = useTranslation();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
   const [adjustModal, setAdjustModal] = useState(false);
@@ -21,7 +23,7 @@ export default function InventoryScreen() {
 
   const filtered = useMemo(() => {
     return products.filter(p => {
-      const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
+      const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.nameAr && p.nameAr.includes(search));
       if (filter === 'low') return matchSearch && p.stock > 0 && p.stock <= p.lowStockAlert;
       if (filter === 'out') return matchSearch && p.stock === 0;
       return matchSearch;
@@ -31,17 +33,12 @@ export default function InventoryScreen() {
   const lowCount = products.filter(p => p.stock > 0 && p.stock <= p.lowStockAlert).length;
   const outCount = products.filter(p => p.stock === 0).length;
 
-  const openAdjust = (p: Product) => {
-    setSelectedProduct(p);
-    setAdjustQty('');
-    setAdjustType('add');
-    setAdjustModal(true);
-  };
+  const openAdjust = (p: Product) => { setSelectedProduct(p); setAdjustQty(''); setAdjustType('add'); setAdjustModal(true); };
 
   const handleAdjust = async () => {
     if (!selectedProduct) return;
     const qty = parseInt(adjustQty) || 0;
-    if (qty <= 0 && adjustType !== 'set') { Alert.alert('Invalid', 'Enter a valid quantity.'); return; }
+    if (qty <= 0 && adjustType !== 'set') { Alert.alert(t('error'), t('invalidAmount')); return; }
     let newStock = selectedProduct.stock;
     if (adjustType === 'add') newStock += qty;
     else if (adjustType === 'subtract') newStock = Math.max(0, newStock - qty);
@@ -50,6 +47,18 @@ export default function InventoryScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setAdjustModal(false);
   };
+
+  const filterOptions = [
+    { key: 'all' as const,      label: `${t('all')} (${products.length})` },
+    { key: 'low' as const,      label: `${t('lowStock')} (${lowCount})` },
+    { key: 'out' as const,      label: `${t('outOfStockShort')} (${outCount})` },
+  ];
+
+  const adjustTypes = [
+    { key: 'add' as const,      label: t('addQty') },
+    { key: 'subtract' as const, label: t('subtractQty') },
+    { key: 'set' as const,      label: t('setQty') },
+  ];
 
   const renderItem = ({ item }: { item: Product }) => {
     const isLow = item.stock > 0 && item.stock <= item.lowStockAlert;
@@ -61,11 +70,13 @@ export default function InventoryScreen() {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
         <View style={styles.cardTop}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.prodName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]} numberOfLines={1}>{item.name}</Text>
+            <Text style={[styles.prodName, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]} numberOfLines={1}>
+              {lang === 'ar' && item.nameAr ? item.nameAr : item.name}
+            </Text>
             <Text style={[styles.sku, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{item.sku} · {item.category}</Text>
           </View>
           <View style={styles.cardRight}>
-            <Badge label={isOut ? 'Out' : isLow ? 'Low' : 'OK'} variant={isOut ? 'danger' : isLow ? 'warning' : 'success'} size="sm" />
+            <Badge label={isOut ? t('outOfStockShort') : isLow ? t('lowStock') : 'OK'} variant={isOut ? 'danger' : isLow ? 'warning' : 'success'} size="sm" />
             <TouchableOpacity onPress={() => openAdjust(item)} style={[styles.adjustBtn, { backgroundColor: colors.primary + '15', borderRadius: 8 }]}>
               <Ionicons name="create-outline" size={18} color={colors.primary} />
             </TouchableOpacity>
@@ -77,7 +88,9 @@ export default function InventoryScreen() {
           </View>
           <Text style={[styles.stockNum, { color: barColor, fontFamily: 'Inter_700Bold' }]}>{item.stock} {item.unit}</Text>
         </View>
-        <Text style={[styles.alertHint, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>Alert at {item.lowStockAlert} · Purchase: {item.purchasePrice.toFixed(2)}</Text>
+        <Text style={[styles.alertHint, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
+          {t('alertAt')} {item.lowStockAlert} · {t('purchase')}: {item.purchasePrice.toFixed(2)}
+        </Text>
       </View>
     );
   };
@@ -85,8 +98,8 @@ export default function InventoryScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <AppHeader
-        title="Inventory"
-        subtitle={`${products.length} products`}
+        title={t('inventory')}
+        subtitle={`${products.length} ${t('products').toLowerCase()}`}
         rightActions={
           <View style={styles.alertsRow}>
             {lowCount > 0 && <View style={[styles.alertDot, { backgroundColor: colors.warning }]}><Text style={[styles.alertDotText, { fontFamily: 'Inter_700Bold' }]}>{lowCount}</Text></View>}
@@ -95,17 +108,11 @@ export default function InventoryScreen() {
         }
       />
       <View style={styles.filters}>
-        <View style={styles.searchWrap}><SearchBar value={search} onChangeText={setSearch} placeholder="Search products…" /></View>
+        <SearchBar value={search} onChangeText={setSearch} placeholder={`${t('search')}…`} />
         <View style={styles.filterRow}>
-          {(['all', 'low', 'out'] as const).map(f => (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setFilter(f)}
-              style={[styles.filterChip, { backgroundColor: filter === f ? colors.primary : colors.muted, borderRadius: 100, borderColor: filter === f ? colors.primary : colors.border, borderWidth: 1 }]}
-            >
-              <Text style={[styles.filterLabel, { color: filter === f ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>
-                {f === 'all' ? `All (${products.length})` : f === 'low' ? `Low (${lowCount})` : `Out (${outCount})`}
-              </Text>
+          {filterOptions.map(f => (
+            <TouchableOpacity key={f.key} onPress={() => setFilter(f.key)} style={[styles.filterChip, { backgroundColor: filter === f.key ? colors.primary : colors.muted, borderRadius: 100, borderColor: filter === f.key ? colors.primary : colors.border, borderWidth: 1 }]}>
+              <Text style={[styles.filterLabel, { color: filter === f.key ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{f.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -120,7 +127,7 @@ export default function InventoryScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="layers-outline" size={48} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>No products match filter</Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('noProductsFilter')}</Text>
           </View>
         }
       />
@@ -128,12 +135,16 @@ export default function InventoryScreen() {
       <Modal visible={adjustModal} animationType="fade" transparent>
         <View style={styles.overlay}>
           <View style={[styles.dialog, { backgroundColor: colors.card, borderRadius: colors.radius + 4 }]}>
-            <Text style={[styles.dialogTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Adjust Stock</Text>
-            {selectedProduct && <Text style={[styles.dialogSub, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{selectedProduct.name} · Current: {selectedProduct.stock}</Text>}
+            <Text style={[styles.dialogTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('adjustStock')}</Text>
+            {selectedProduct && (
+              <Text style={[styles.dialogSub, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>
+                {lang === 'ar' && selectedProduct.nameAr ? selectedProduct.nameAr : selectedProduct.name} · {t('current')}: {selectedProduct.stock}
+              </Text>
+            )}
             <View style={styles.typeRow}>
-              {(['add', 'subtract', 'set'] as const).map(t => (
-                <TouchableOpacity key={t} onPress={() => setAdjustType(t)} style={[styles.typeBtn, { backgroundColor: adjustType === t ? colors.primary : colors.muted, borderRadius: 8 }]}>
-                  <Text style={[styles.typeLabel, { color: adjustType === t ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t.charAt(0).toUpperCase() + t.slice(1)}</Text>
+              {adjustTypes.map(at => (
+                <TouchableOpacity key={at.key} onPress={() => setAdjustType(at.key)} style={[styles.typeBtn, { backgroundColor: adjustType === at.key ? colors.primary : colors.muted, borderRadius: 8 }]}>
+                  <Text style={[styles.typeLabel, { color: adjustType === at.key ? '#FFFFFF' : colors.foreground, fontFamily: 'Inter_500Medium' }]}>{at.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -142,16 +153,16 @@ export default function InventoryScreen() {
               value={adjustQty}
               onChangeText={setAdjustQty}
               keyboardType="number-pad"
-              placeholder="Quantity"
+              placeholder={t('quantity')}
               placeholderTextColor={colors.mutedForeground}
               autoFocus
             />
             <View style={styles.dialogBtns}>
               <TouchableOpacity onPress={() => setAdjustModal(false)} style={[styles.dialogBtn, { backgroundColor: colors.muted, borderRadius: 10 }]}>
-                <Text style={[styles.dialogBtnText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>Cancel</Text>
+                <Text style={[styles.dialogBtnText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleAdjust} style={[styles.dialogBtn, { backgroundColor: colors.primary, borderRadius: 10 }]}>
-                <Text style={[styles.dialogBtnText, { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold' }]}>Apply</Text>
+                <Text style={[styles.dialogBtnText, { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold' }]}>{t('apply')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -164,7 +175,6 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   filters: { padding: 12, gap: 10 },
-  searchWrap: {},
   filterRow: { flexDirection: 'row', gap: 8 },
   filterChip: { paddingHorizontal: 14, paddingVertical: 7 },
   filterLabel: { fontSize: 13 },

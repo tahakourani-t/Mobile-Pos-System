@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { I18nManager } from 'react-native';
 import type { User, NotificationItem, StoreSettings } from '@/types';
 import { MOCK_USER, MOCK_NOTIFICATIONS } from '@/constants/mockData';
+
+const TRIAL_DAYS = 14;
+const TRIAL_KEY = 'trial_start_date';
 
 interface AppContextType {
   isAuthenticated: boolean;
@@ -15,6 +19,10 @@ interface AppContextType {
   addNotification: (n: Omit<NotificationItem, 'id' | 'createdAt'>) => void;
   storeSettings: StoreSettings;
   updateStoreSettings: (s: Partial<StoreSettings>) => Promise<void>;
+  // Trial
+  trialDaysLeft: number;
+  trialExpired: boolean;
+  trialStartDate: string | null;
 }
 
 const defaultSettings: StoreSettings = {
@@ -36,13 +44,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(defaultSettings);
+  const [trialStartDate, setTrialStartDate] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [authVal, notifVal, settingsVal] = await Promise.all([
+      const [authVal, notifVal, settingsVal, trialVal] = await Promise.all([
         AsyncStorage.getItem('is_authenticated'),
         AsyncStorage.getItem('notifications'),
         AsyncStorage.getItem('store_settings'),
+        AsyncStorage.getItem(TRIAL_KEY),
       ]);
 
       if (authVal === 'true') {
@@ -58,10 +68,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (settingsVal) {
-        setStoreSettings({ ...defaultSettings, ...JSON.parse(settingsVal) });
+        const s = { ...defaultSettings, ...JSON.parse(settingsVal) };
+        setStoreSettings(s);
+        applyRTL(s.language);
+      }
+
+      // Start trial on first launch
+      if (trialVal) {
+        setTrialStartDate(trialVal);
+      } else {
+        const now = new Date().toISOString();
+        await AsyncStorage.setItem(TRIAL_KEY, now);
+        setTrialStartDate(now);
       }
     })();
   }, []);
+
+  const applyRTL = (lang: 'en' | 'ar') => {
+    const shouldBeRTL = lang === 'ar';
+    if (I18nManager.isRTL !== shouldBeRTL) {
+      I18nManager.forceRTL(shouldBeRTL);
+      // On native this would require a reload; on web it applies immediately
+    }
+  };
 
   const login = async (pin: string): Promise<boolean> => {
     const storedPin = await AsyncStorage.getItem('user_pin') ?? MOCK_USER.pin;
@@ -113,12 +142,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...storeSettings, ...s };
     setStoreSettings(updated);
     await AsyncStorage.setItem('store_settings', JSON.stringify(updated));
+    if (s.language) applyRTL(s.language);
   };
+
+  // Trial calculation
+  const trialDaysLeft = trialStartDate
+    ? Math.max(0, TRIAL_DAYS - Math.floor((Date.now() - new Date(trialStartDate).getTime()) / 86400000))
+    : TRIAL_DAYS;
+  const trialExpired = trialDaysLeft === 0;
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <AppContext.Provider value={{ isAuthenticated, user, login, logout, notifications, unreadCount, markRead, markAllRead, addNotification, storeSettings, updateStoreSettings }}>
+    <AppContext.Provider value={{
+      isAuthenticated, user, login, logout,
+      notifications, unreadCount, markRead, markAllRead, addNotification,
+      storeSettings, updateStoreSettings,
+      trialDaysLeft, trialExpired, trialStartDate,
+    }}>
       {children}
     </AppContext.Provider>
   );
