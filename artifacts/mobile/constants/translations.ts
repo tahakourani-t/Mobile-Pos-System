@@ -196,6 +196,26 @@ export const t: Record<string, Record<Lang, string>> = {
   version:          { en: 'Version',              ar: 'الإصدار' },
   build:            { en: 'Build',                ar: 'البناء' },
 
+  // ── Invoices ─────────────────────────────────────────────────────────────
+  invoices:         { en: 'Invoices',             ar: 'الفواتير' },
+  invoiceNo:        { en: 'Invoice #',            ar: 'فاتورة #' },
+  invoiceTotalOne:  { en: '1 invoice total',      ar: 'فاتورة واحدة في المجموع' },
+  invoiceTotalMany: { en: '{count} invoices total', ar: 'إجمالي {count} فاتورة' },
+  loadingInvoices:  { en: 'Loading invoices…',    ar: 'جاري تحميل الفواتير…' },
+  noInvoicesYet:    { en: 'No invoices yet',      ar: 'لا توجد فواتير بعد' },
+  noInvoicesHint:   { en: 'Completed orders will appear here as invoices.', ar: 'ستظهر الطلبات المكتملة هنا كفواتير.' },
+  printReceipt:     { en: 'Print Receipt',        ar: 'طباعة الفاتورة' },
+  store:            { en: 'Store',                ar: 'المتجر' },
+  payment:          { en: 'Payment',              ar: 'طريقة الدفع' },
+  split:            { en: 'Split',                ar: 'مشترك' },
+  telLabel:         { en: 'Tel',                  ar: 'هاتف' },
+  qtyLabel:         { en: 'Qty',                  ar: 'الكمية' },
+  itemLabel:        { en: 'Item',                 ar: 'المنتج' },
+  noteLabel:        { en: 'Note',                 ar: 'ملاحظة' },
+  customerLabel:    { en: 'Customer',             ar: 'العميل' },
+  itemsLabel:       { en: '{count} item',         ar: '{count} عنصر' },
+  itemsLabelPlural: { en: '{count} items',        ar: '{count} عناصر' },
+
   // ── More ─────────────────────────────────────────────────────────────────
   more:             { en: 'More',                 ar: 'المزيد' },
   admin:            { en: 'Admin',                ar: 'مدير' },
