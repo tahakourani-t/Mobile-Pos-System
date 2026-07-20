@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "POS Mobile",
-    "slug": "mobile",
+    "name": "Saylora POS",
+    "slug": "saylora-pos",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "saylora-pos",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,17 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.workspace.mobile"
+      "bundleIdentifier": "com.saylora.pos",
+      "buildNumber": "1"
     },
     "android": {
-      "package": "com.workspace.mobile"
+      "package": "com.saylora.pos",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0B0F1A"
+      },
+      "permissions": []
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -36,6 +43,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
     }
   }
 }
