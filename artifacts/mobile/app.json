@@ -46,8 +46,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": ""
+        "projectId": "e224cbd0-58bc-4ca6-9844-9dde5be48e35"
       }
-    }
+    },
+    "owner": "tik2003"
   }
 }
