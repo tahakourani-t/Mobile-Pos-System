@@ -13,7 +13,7 @@ import type { Product } from '@/types';
 export default function InventoryScreen() {
   const colors = useColors();
   const { products, updateProduct } = useData();
-  const { t, lang } = useTranslation();
+  const { t, lang, isRTL } = useTranslation();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
   const [adjustModal, setAdjustModal] = useState(false);
@@ -157,7 +157,7 @@ export default function InventoryScreen() {
               placeholderTextColor={colors.mutedForeground}
               autoFocus
             />
-            <View style={styles.dialogBtns}>
+            <View style={[styles.dialogBtns, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <TouchableOpacity onPress={() => setAdjustModal(false)} style={[styles.dialogBtn, { backgroundColor: colors.muted, borderRadius: 10 }]}>
                 <Text style={[styles.dialogBtnText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t('cancel')}</Text>
               </TouchableOpacity>

@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Product, Order, Customer, Expense } from '@/types';
 import { MOCK_PRODUCTS, MOCK_ORDERS, MOCK_CUSTOMERS, MOCK_EXPENSES, generateId } from '@/constants/mockData';
+import { useApp } from './AppContext';
 
 interface DataContextType {
   products: Product[];
@@ -24,38 +25,54 @@ interface DataContextType {
 const DataContext = createContext<DataContextType>({} as DataContextType);
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const { activeStoreId } = useApp();
+  const [products, setProducts]   = useState<Product[]>([]);
+  const [orders, setOrders]       = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenses, setExpenses]   = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const loadedForRef = useRef<string | null>(null);
 
+  // ── Per-store key helpers ──────────────────────────────────────────────────
+  const k = (base: string) => activeStoreId ? `${base}_${activeStoreId}` : base;
+
+  // ── Load data whenever active store changes ────────────────────────────────
   useEffect(() => {
+    if (!activeStoreId || loadedForRef.current === activeStoreId) return;
+    loadedForRef.current = activeStoreId;
+    setIsLoading(true);
+
     (async () => {
       const [prodVal, ordVal, custVal, expVal] = await Promise.all([
-        AsyncStorage.getItem('products'),
-        AsyncStorage.getItem('orders'),
-        AsyncStorage.getItem('customers'),
-        AsyncStorage.getItem('expenses'),
+        AsyncStorage.getItem(k('products')),
+        AsyncStorage.getItem(k('orders')),
+        AsyncStorage.getItem(k('customers')),
+        AsyncStorage.getItem(k('expenses')),
       ]);
-      setProducts(prodVal ? JSON.parse(prodVal) : MOCK_PRODUCTS);
-      setOrders(ordVal ? JSON.parse(ordVal) : MOCK_ORDERS);
-      setCustomers(custVal ? JSON.parse(custVal) : MOCK_CUSTOMERS);
-      setExpenses(expVal ? JSON.parse(expVal) : MOCK_EXPENSES);
 
-      if (!prodVal) await AsyncStorage.setItem('products', JSON.stringify(MOCK_PRODUCTS));
-      if (!ordVal) await AsyncStorage.setItem('orders', JSON.stringify(MOCK_ORDERS));
-      if (!custVal) await AsyncStorage.setItem('customers', JSON.stringify(MOCK_CUSTOMERS));
-      if (!expVal) await AsyncStorage.setItem('expenses', JSON.stringify(MOCK_EXPENSES));
+      const prods = prodVal ? JSON.parse(prodVal) : MOCK_PRODUCTS;
+      const ords  = ordVal  ? JSON.parse(ordVal)  : MOCK_ORDERS;
+      const custs = custVal ? JSON.parse(custVal) : MOCK_CUSTOMERS;
+      const exps  = expVal  ? JSON.parse(expVal)  : MOCK_EXPENSES;
+
+      setProducts(prods);
+      setOrders(ords);
+      setCustomers(custs);
+      setExpenses(exps);
+
+      if (!prodVal) await AsyncStorage.setItem(k('products'), JSON.stringify(MOCK_PRODUCTS));
+      if (!ordVal)  await AsyncStorage.setItem(k('orders'),   JSON.stringify(MOCK_ORDERS));
+      if (!custVal) await AsyncStorage.setItem(k('customers'),JSON.stringify(MOCK_CUSTOMERS));
+      if (!expVal)  await AsyncStorage.setItem(k('expenses'), JSON.stringify(MOCK_EXPENSES));
 
       setIsLoading(false);
     })();
-  }, []);
+  }, [activeStoreId]);
 
-  const saveProducts = async (p: Product[]) => { setProducts(p); await AsyncStorage.setItem('products', JSON.stringify(p)); };
-  const saveOrders = async (o: Order[]) => { setOrders(o); await AsyncStorage.setItem('orders', JSON.stringify(o)); };
-  const saveCustomers = async (c: Customer[]) => { setCustomers(c); await AsyncStorage.setItem('customers', JSON.stringify(c)); };
-  const saveExpenses = async (e: Expense[]) => { setExpenses(e); await AsyncStorage.setItem('expenses', JSON.stringify(e)); };
+  const saveProducts  = async (p: Product[])  => { setProducts(p);  await AsyncStorage.setItem(k('products'),  JSON.stringify(p)); };
+  const saveOrders    = async (o: Order[])    => { setOrders(o);    await AsyncStorage.setItem(k('orders'),    JSON.stringify(o)); };
+  const saveCustomers = async (c: Customer[]) => { setCustomers(c); await AsyncStorage.setItem(k('customers'), JSON.stringify(c)); };
+  const saveExpenses  = async (e: Expense[])  => { setExpenses(e);  await AsyncStorage.setItem(k('expenses'),  JSON.stringify(e)); };
 
   const addProduct = async (p: Omit<Product, 'id' | 'createdAt'>): Promise<Product> => {
     const newP: Product = { ...p, id: generateId(), createdAt: new Date().toISOString() };
@@ -74,8 +91,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addOrder = async (o: Omit<Order, 'id' | 'createdAt' | 'orderNumber'>): Promise<Order> => {
     const num = (orders.length + 1).toString().padStart(4, '0');
     const newO: Order = { ...o, id: generateId(), orderNumber: `#${num}`, createdAt: new Date().toISOString() };
-    const updated = [newO, ...orders];
-    await saveOrders(updated);
+    await saveOrders([newO, ...orders]);
     return newO;
   };
 
@@ -93,13 +109,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await saveExpenses([...expenses, { ...e, id: generateId() }]);
   };
 
-  const today = new Date().toDateString();
-  const todayOrders = orders.filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === today);
-  const todaySales = todayOrders.reduce((s, o) => s + o.total, 0);
-  const todayProfit = todayOrders.reduce((s, o) => s + o.items.reduce((p, i) => p + (i.product.price - i.product.purchasePrice) * i.quantity, 0), 0);
+  const today      = new Date().toDateString();
+  const todayOrdList = orders.filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === today);
+  const todaySales  = todayOrdList.reduce((s, o) => s + o.total, 0);
+  const todayOrders = todayOrdList.length;
+  const todayProfit = todayOrdList.reduce((s, o) => s + o.items.reduce((p, i) => p + (i.product.price - i.product.purchasePrice) * i.quantity, 0), 0);
 
   return (
-    <DataContext.Provider value={{ products, orders, customers, expenses, isLoading, addProduct, updateProduct, deleteProduct, addOrder, addCustomer, updateCustomer, addExpense, todaySales, todayOrders: todayOrders.length, todayProfit }}>
+    <DataContext.Provider value={{
+      products, orders, customers, expenses, isLoading,
+      addProduct, updateProduct, deleteProduct,
+      addOrder, addCustomer, updateCustomer, addExpense,
+      todaySales, todayOrders, todayProfit,
+    }}>
       {children}
     </DataContext.Provider>
   );

@@ -16,7 +16,7 @@ const BLANK: Omit<Customer, 'id' | 'createdAt' | 'totalPurchases' | 'totalOrders
 export default function CustomersScreen() {
   const colors = useColors();
   const { customers, addCustomer } = useData();
-  const { t } = useTranslation();
+  const { t, isRTL } = useTranslation();
   const [search, setSearch] = useState('');
   const [detailModal, setDetailModal] = useState(false);
   const [addModal, setAddModal] = useState(false);
@@ -163,7 +163,7 @@ export default function CustomersScreen() {
       {/* Add */}
       <Modal visible={addModal} animationType="slide" presentationStyle="formSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
             <TouchableOpacity onPress={() => setAddModal(false)}><Ionicons name="close" size={24} color={colors.foreground} /></TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('addCustomer')}</Text>
             <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
@@ -173,9 +173,9 @@ export default function CustomersScreen() {
           <ScrollView contentContainerStyle={styles.formContent}>
             {formFields.map(f => (
               <View key={f.key} style={styles.fieldGroup}>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{f.label}</Text>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]}>{f.label}</Text>
                 <TextInput
-                  style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular' }]}
+                  style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]}
                   value={(form as any)[f.key]}
                   onChangeText={v => setForm(prev => ({ ...prev, [f.key]: v }))}
                   keyboardType={f.kbType}

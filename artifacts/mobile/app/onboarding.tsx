@@ -3,12 +3,10 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Image, Animated, Platform, Alert, KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/contexts/AppContext';
@@ -18,22 +16,26 @@ const PAD = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
 type Step = 'store' | 'pin' | 'confirm';
 
+// Generate a simple unique store ID
+const genStoreId = () =>
+  Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+
 export default function OnboardingScreen() {
-  const colors = useColors();
-  const router = useRouter();
-  const { updateStoreSettings, completeOnboarding } = useApp();
+  const colors  = useColors();
+  const router  = useRouter();
+  const { completeOnboarding } = useApp();
 
-  const [storeName, setStoreName]   = useState('');
-  const [email, setEmail]           = useState('');
-  const [location, setLocation]     = useState('');
-  const [phone, setPhone]           = useState('');
-  const [logoUri, setLogoUri]       = useState<string | null>(null);
+  const [storeName, setStoreName] = useState('');
+  const [email, setEmail]         = useState('');
+  const [location, setLocation]   = useState('');
+  const [phone, setPhone]         = useState('');
+  const [logoUri, setLogoUri]     = useState<string | null>(null);
 
-  const [step, setStep]             = useState<Step>('store');
-  const [pin, setPin]               = useState('');
+  const [step, setStep]           = useState<Step>('store');
+  const [pin, setPin]             = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [pinError, setPinError]     = useState('');
-  const [saving, setSaving]         = useState(false);
+  const [pinError, setPinError]   = useState('');
+  const [saving, setSaving]       = useState(false);
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -69,9 +71,7 @@ export default function OnboardingScreen() {
     if (status !== 'granted') { Alert.alert('Permission needed', 'Allow access to pick a logo.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) setLogoUri(result.assets[0].uri);
   };
@@ -106,16 +106,15 @@ export default function OnboardingScreen() {
   const finishSetup = async (finalPin: string) => {
     setSaving(true);
     try {
-      await updateStoreSettings({
+      const storeId = genStoreId();
+      await completeOnboarding(storeId, finalPin, {
         name:     storeName.trim(),
         email:    email.trim(),
         address:  location.trim(),
         phone:    phone.trim(),
         currency: 'LBP',
-        ...(logoUri ? { logoUri } : {}),
-      });
-      await AsyncStorage.setItem('user_pin', finalPin);
-      await completeOnboarding();
+        logoUri:  logoUri ?? undefined,
+      } as any);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)');
     } catch {
@@ -125,8 +124,8 @@ export default function OnboardingScreen() {
     }
   };
 
-  const currentPin  = step === 'confirm' ? confirmPin : pin;
-  const isConfirm   = step === 'confirm';
+  const currentPin = step === 'confirm' ? confirmPin : pin;
+  const isConfirm  = step === 'confirm';
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -139,32 +138,20 @@ export default function OnboardingScreen() {
         <Text style={[styles.heroSub, { fontFamily: 'Inter_400Regular' }]}>
           {step === 'store' ? 'Tell us about your business' : step === 'pin' ? 'Choose a 4-digit PIN to secure your POS' : 'Confirm your PIN'}
         </Text>
-
         <View style={styles.stepDots}>
-          {(['store', 'pin', 'confirm'] as Step[]).map(s => (
-            <View
-              key={s}
-              style={[
-                styles.stepDot,
-                { backgroundColor: step === s ? '#FFFFFF' : 'rgba(255,255,255,0.35)', width: step === s ? 20 : 8 },
-              ]}
-            />
+          {(['store','pin','confirm'] as Step[]).map(s => (
+            <View key={s} style={[styles.stepDot, { backgroundColor: step === s ? '#FFFFFF' : 'rgba(255,255,255,0.35)', width: step === s ? 20 : 8 }]} />
           ))}
         </View>
       </LinearGradient>
 
       <Animated.View style={[styles.sheet, { backgroundColor: colors.card, transform: [{ translateX: slideAnim }] }]}>
+
         {/* ── Step 1: Store Info ── */}
         {step === 'store' && (
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ flex: 1 }}
-          >
-            <ScrollView
-              contentContainerStyle={styles.formContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={styles.formContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
               {/* Logo picker */}
               <TouchableOpacity onPress={pickLogo} style={styles.logoPicker} activeOpacity={0.8}>
                 {logoUri ? (
@@ -184,10 +171,10 @@ export default function OnboardingScreen() {
               </TouchableOpacity>
 
               {[
-                { label: 'Store Name *',    placeholder: 'e.g. Abu Ali Supermarket',      value: storeName, onChange: setStoreName, kb: 'default' as const,        icon: 'storefront-outline' as const },
-                { label: 'Phone Number *',  placeholder: '+961 xx xxx xxx',               value: phone,     onChange: setPhone,     kb: 'phone-pad' as const,       icon: 'call-outline' as const },
-                { label: 'Email',           placeholder: 'store@email.com',               value: email,     onChange: setEmail,     kb: 'email-address' as const,   icon: 'mail-outline' as const },
-                { label: 'Street / Location', placeholder: 'e.g. Hamra Street, Beirut',  value: location,  onChange: setLocation,  kb: 'default' as const,         icon: 'location-outline' as const },
+                { label: 'Store Name *',       placeholder: 'e.g. Abu Ali Supermarket',      value: storeName, onChange: setStoreName, kb: 'default' as const,       icon: 'storefront-outline' as const },
+                { label: 'Phone Number *',     placeholder: '+961 xx xxx xxx',               value: phone,     onChange: setPhone,     kb: 'phone-pad' as const,      icon: 'call-outline' as const },
+                { label: 'Email',              placeholder: 'store@email.com',               value: email,     onChange: setEmail,     kb: 'email-address' as const,  icon: 'mail-outline' as const },
+                { label: 'Street / Location',  placeholder: 'e.g. Hamra Street, Beirut',     value: location,  onChange: setLocation,  kb: 'default' as const,        icon: 'location-outline' as const },
               ].map(f => (
                 <View key={f.label} style={styles.fieldGroup}>
                   <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_500Medium' }]}>{f.label}</Text>
@@ -236,7 +223,7 @@ export default function OnboardingScreen() {
                     styles.dot,
                     {
                       backgroundColor: i < currentPin.length ? colors.primary : colors.border,
-                      borderColor: i < currentPin.length ? colors.primary : colors.border,
+                      borderColor:     i < currentPin.length ? colors.primary : colors.border,
                       transform: [{ scale: i < currentPin.length ? 1.15 : 1 }],
                     },
                   ]}
@@ -244,11 +231,10 @@ export default function OnboardingScreen() {
               ))}
             </Animated.View>
 
-            {pinError ? (
-              <Text style={[styles.pinError, { color: colors.destructive, fontFamily: 'Inter_400Regular' }]}>{pinError}</Text>
-            ) : (
-              <View style={{ height: 20 }} />
-            )}
+            {pinError
+              ? <Text style={[styles.pinError, { color: colors.destructive, fontFamily: 'Inter_400Regular' }]}>{pinError}</Text>
+              : <View style={{ height: 20 }} />
+            }
 
             <View style={styles.pad}>
               {PAD.map((key, i) => (
@@ -261,9 +247,7 @@ export default function OnboardingScreen() {
                       borderColor: key === '' || key === '⌫' ? 'transparent' : colors.border,
                       borderRadius: colors.radius + 4,
                       shadowColor: key === '' || key === '⌫' ? 'transparent' : '#000',
-                      shadowOpacity: 0.06,
-                      shadowRadius: 4,
-                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
                       elevation: key === '' || key === '⌫' ? 0 : 2,
                     },
                   ]}
@@ -271,11 +255,12 @@ export default function OnboardingScreen() {
                   activeOpacity={key === '' ? 1 : 0.7}
                   disabled={saving || key === ''}
                 >
-                  {key === '⌫' ? (
-                    <Ionicons name="backspace-outline" size={22} color={colors.foreground} />
-                  ) : key !== '' ? (
-                    <Text style={[styles.padKeyText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{key}</Text>
-                  ) : null}
+                  {key === '⌫'
+                    ? <Ionicons name="backspace-outline" size={22} color={colors.foreground} />
+                    : key !== ''
+                      ? <Text style={[styles.padKeyText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{key}</Text>
+                      : null
+                  }
                 </TouchableOpacity>
               ))}
             </View>
@@ -297,29 +282,18 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   hero: {
     paddingTop: Platform.OS === 'web' ? 60 : 64,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    gap: 8,
+    paddingBottom: 32, paddingHorizontal: 24,
+    alignItems: 'center', gap: 8,
   },
   heroIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   heroTitle: { fontSize: 24, color: '#FFFFFF' },
   heroSub: { fontSize: 14, color: 'rgba(255,255,255,0.75)', textAlign: 'center' },
   stepDots: { flexDirection: 'row', gap: 6, marginTop: 12, alignItems: 'center' },
   stepDot: { height: 8, borderRadius: 4 },
-  sheet: {
-    flex: 1,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -20,
-    overflow: 'hidden',
-  },
+  sheet: { flex: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -20, overflow: 'hidden' },
   formContent: { padding: 24, gap: 4, paddingBottom: 40 },
   logoPicker: { alignSelf: 'center', marginBottom: 20, position: 'relative' },
-  logoPlaceholder: {
-    width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 2,
-  },
+  logoPlaceholder: { width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 2 },
   logoImg: { width: 90, height: 90, borderRadius: 45 },
   logoHint: { fontSize: 12 },
   logoSub: { fontSize: 11 },

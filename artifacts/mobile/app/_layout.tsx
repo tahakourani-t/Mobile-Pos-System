@@ -35,7 +35,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!isOnboardingComplete && !inOnboarding) {
       // First launch — go to onboarding
       router.replace('/onboarding');
-    } else if (isOnboardingComplete && !isAuthenticated && !inLogin) {
+    } else if (isOnboardingComplete && !isAuthenticated && !inLogin && !inOnboarding) {
       // Onboarding done, needs PIN login
       router.replace('/login');
     } else if (isOnboardingComplete && isAuthenticated && trialExpired && !inPaywall) {

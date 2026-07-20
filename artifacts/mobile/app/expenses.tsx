@@ -16,7 +16,7 @@ export default function ExpensesScreen() {
   const colors = useColors();
   const { expenses, addExpense } = useData();
   const { storeSettings } = useApp();
-  const { t } = useTranslation();
+  const { t, isRTL } = useTranslation();
   const [addModal, setAddModal] = useState(false);
   const [form, setForm] = useState({ category: 'Rent', amount: '', description: '', isRecurring: false });
 
@@ -77,7 +77,7 @@ export default function ExpensesScreen() {
 
       <Modal visible={addModal} animationType="slide" presentationStyle="formSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.card, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
             <TouchableOpacity onPress={() => setAddModal(false)}><Ionicons name="close" size={24} color={colors.foreground} /></TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>{t('addExpense')}</Text>
             <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: 8 }]}>
@@ -85,7 +85,7 @@ export default function ExpensesScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.formContent}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('category')}</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]}>{t('category')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {CATEGORIES.map(cat => (
@@ -95,11 +95,11 @@ export default function ExpensesScreen() {
                 ))}
               </View>
             </ScrollView>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('amount')}</Text>
-            <TextInput style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular', marginBottom: 16 }]} value={form.amount} onChangeText={v => setForm(p => ({ ...p, amount: v }))} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.mutedForeground} />
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }]}>{t('description')}</Text>
-            <TextInput style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular', marginBottom: 16 }]} value={form.description} onChangeText={v => setForm(p => ({ ...p, description: v }))} placeholder={t('optional')} placeholderTextColor={colors.mutedForeground} />
-            <View style={styles.recurringRow}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]}>{t('amount')}</Text>
+            <TextInput style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular', marginBottom: 16, textAlign: isRTL ? 'right' : 'left' }]} value={form.amount} onChangeText={v => setForm(p => ({ ...p, amount: v }))} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.mutedForeground} />
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, fontFamily: 'Inter_400Regular', textAlign: isRTL ? 'right' : 'left' }]}>{t('description')}</Text>
+            <TextInput style={[styles.fieldInput, { color: colors.foreground, borderColor: colors.border, borderRadius: colors.radius - 4, backgroundColor: colors.muted, fontFamily: 'Inter_400Regular', marginBottom: 16, textAlign: isRTL ? 'right' : 'left' }]} value={form.description} onChangeText={v => setForm(p => ({ ...p, description: v }))} placeholder={t('optional')} placeholderTextColor={colors.mutedForeground} />
+            <View style={[styles.recurringRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <Text style={[styles.recurringText, { color: colors.foreground, fontFamily: 'Inter_500Medium' }]}>{t('recurringExpense')}</Text>
               <TouchableOpacity onPress={() => setForm(p => ({ ...p, isRecurring: !p.isRecurring }))} style={[styles.toggle, { backgroundColor: form.isRecurring ? colors.primary : colors.muted, borderRadius: 100 }]}>
                 <View style={[styles.toggleThumb, { backgroundColor: '#FFFFFF', transform: [{ translateX: form.isRecurring ? 18 : 2 }] }]} />

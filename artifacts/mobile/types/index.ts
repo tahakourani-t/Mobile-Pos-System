@@ -1,3 +1,10 @@
+export interface StoreProfile {
+  storeId: string;
+  name: string;
+  logoUri?: string;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
