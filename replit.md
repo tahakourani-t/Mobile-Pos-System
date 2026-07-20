@@ -1,45 +1,74 @@
-# [Project name]
+# POS Mobile App
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-stack Point-of-Sale system for small businesses, with a React Native / Expo mobile frontend and an Express API backend backed by SQLite.
 
-## Run & Operate
+## Architecture
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+| Layer | Tech | Notes |
+|-------|------|-------|
+| Mobile | Expo / React Native (Expo Router) | Web preview via Expo web |
+| API | Express 5 + pino logging | Bundled via esbuild |
+| Database | SQLite via `better-sqlite3` + Drizzle ORM | File: `./pos.db` (relative to API server CWD) |
+| Auth | JWT (`jsonwebtoken`) + PIN hashing (`node:crypto` scrypt) | 7-day tokens |
 
-## Stack
+## Running locally
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+Two workflows run automatically:
 
-## Where things live
+- **POS Mobile App** — Expo dev server on port 18115
+- **API Server** — Express on port 8080 (auto-builds before starting)
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+No external database needed — SQLite creates `pos.db` on first start.
 
-## Architecture decisions
+## Environment variables / Secrets
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SESSION_SECRET` | Yes | JWT signing secret. Set in Replit Secrets. |
+| `SQLITE_PATH` | No | Override SQLite file path (default: `./pos.db`) |
+| `EXPO_PUBLIC_DOMAIN` | Auto-set | Injected by mobile dev script from `$REPLIT_DEV_DOMAIN` |
 
-## Product
+## Auth flow
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+1. **Onboarding** (`POST /api/auth/setup`): Creates a store + admin user with a 4-digit PIN.
+2. **Login** (`POST /api/auth/login`): Accepts `{ storeId, pin }`, returns JWT + user + store.
+3. **Store picker** (`GET /api/auth/stores`): Public — lists active stores for the login screen.
+
+## API routes
+
+All routes under `/api/`:
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/healthz` | No | Health check |
+| POST | `/auth/setup` | No | First-time store setup |
+| POST | `/auth/login` | No | Login with PIN |
+| GET | `/auth/stores` | No | List stores (store picker) |
+| GET/PUT | `/stores/:id` | JWT | Get/update store |
+| GET/POST/PUT/DELETE | `/products` | JWT | Product CRUD |
+| GET/POST/PUT | `/customers` | JWT | Customer management |
+| GET/POST | `/orders` | JWT | Order list & creation |
+| GET/POST | `/expenses` | JWT | Expense tracking |
+| GET/POST/PATCH | `/notifications` | JWT | Notifications |
+
+## Database schema
+
+Tables auto-created with `CREATE TABLE IF NOT EXISTS` on API startup — no migrations needed in development.
+
+Tables: `stores`, `users`, `categories`, `products`, `customers`, `orders`, `order_items`, `expenses`, `notifications`.
+
+## Monorepo structure
+
+```
+artifacts/
+  api-server/    — Express API (TypeScript, esbuild)
+  mobile/        — Expo React Native app
+lib/
+  db/            — Drizzle ORM schema + SQLite client (shared)
+```
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- SQLite over external PostgreSQL (no external DB dependency)
+- PIN-based cashier auth (4-digit PIN per store)
+- Real API data — no mock data in the app

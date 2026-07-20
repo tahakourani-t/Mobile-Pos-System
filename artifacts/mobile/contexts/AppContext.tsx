@@ -1,33 +1,37 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { I18nManager, View, ActivityIndicator } from 'react-native';
-import type { User, NotificationItem, StoreSettings, StoreProfile } from '@/types';
-import { MOCK_USER, MOCK_NOTIFICATIONS } from '@/constants/mockData';
-
-const TRIAL_DAYS = 14;
-
-// ─── Per-store AsyncStorage key helpers ─────────────────────────────────────
-const key = {
-  profiles:     () => 'store_profiles',
-  activeStore:  () => 'active_store_id',
-  pin:          (id: string) => `store_pin_${id}`,
-  settings:     (id: string) => `store_settings_${id}`,
-  trial:        (id: string) => `store_trial_${id}`,
-  notifications:(id: string) => `store_notifications_${id}`,
-};
+import type { NotificationItem, StoreSettings } from '@/types';
+import * as api from '@/lib/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface AppUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'cashier' | 'manager';
+  storeId: string;
+}
+
+export interface StoreProfile {
+  storeId: string;
+  name: string;
+  logoUri?: string;
+  createdAt: string;
+}
+
 interface AppContextType {
   // Auth
   isAuthenticated: boolean;
   activeStoreId: string | null;
-  user: User | null;
+  user: AppUser | null;
   login: (storeId: string, pin: string) => Promise<boolean>;
   logout: () => Promise<void>;
 
   // Store profiles (for the store-picker on login screen)
   storeProfiles: StoreProfile[];
-  addStoreProfile: (profile: StoreProfile, pin: string, settings: StoreSettings) => Promise<void>;
+  refreshStoreProfiles: () => Promise<void>;
 
   // Notifications
   notifications: NotificationItem[];
@@ -35,6 +39,7 @@ interface AppContextType {
   markRead: (id: string) => void;
   markAllRead: () => void;
   addNotification: (n: Omit<NotificationItem, 'id' | 'createdAt'>) => void;
+  refreshNotifications: () => Promise<void>;
 
   // Settings (for the active store)
   storeSettings: StoreSettings;
@@ -51,6 +56,8 @@ interface AppContextType {
   // Ready flag
   hydrated: boolean;
 }
+
+const TRIAL_DAYS = 14;
 
 const defaultSettings: StoreSettings = {
   name: '',
@@ -70,7 +77,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated]               = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeStoreId, setActiveStoreId]     = useState<string | null>(null);
-  const [user, setUser]                       = useState<User | null>(null);
+  const [user, setUser]                       = useState<AppUser | null>(null);
   const [storeProfiles, setStoreProfiles]     = useState<StoreProfile[]>([]);
   const [notifications, setNotifications]     = useState<NotificationItem[]>([]);
   const [storeSettings, setStoreSettings]     = useState<StoreSettings>(defaultSettings);
@@ -79,43 +86,74 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ── Hydrate on mount ──────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const [profilesRaw, activeIdRaw] = await Promise.all([
-        AsyncStorage.getItem(key.profiles()),
-        AsyncStorage.getItem(key.activeStore()),
-      ]);
-
-      const profiles: StoreProfile[] = profilesRaw ? JSON.parse(profilesRaw) : [];
-      setStoreProfiles(profiles);
-
-      // Restore the last active store's settings
-      const savedId = activeIdRaw ?? profiles[0]?.storeId ?? null;
-      if (savedId) {
-        await _loadStoreData(savedId, profiles);
-      }
-
+      try {
+        await api.loadToken();
+        await refreshStoreProfiles();
+        // Restore previous session
+        const savedStoreId = await AsyncStorage.getItem('active_store_id');
+        const savedUser    = await AsyncStorage.getItem('current_user');
+        const savedToken   = await AsyncStorage.getItem('auth_token');
+        if (savedToken && savedStoreId && savedUser) {
+          const u = JSON.parse(savedUser) as AppUser;
+          setUser(u);
+          setActiveStoreId(savedStoreId);
+          setIsAuthenticated(true);
+          await _loadStoreSettings(savedStoreId);
+          await _loadNotifications(savedStoreId);
+        }
+      } catch {}
       setHydrated(true);
     })();
   }, []);
 
-  const _loadStoreData = async (storeId: string, profiles?: StoreProfile[]) => {
-    const [settingsRaw, notifRaw, trialRaw] = await Promise.all([
-      AsyncStorage.getItem(key.settings(storeId)),
-      AsyncStorage.getItem(key.notifications(storeId)),
-      AsyncStorage.getItem(key.trial(storeId)),
-    ]);
-
-    const settings = settingsRaw ? { ...defaultSettings, ...JSON.parse(settingsRaw) } : defaultSettings;
-    setStoreSettings(settings);
-    applyRTL(settings.language);
-
-    if (notifRaw) {
-      setNotifications(JSON.parse(notifRaw));
-    } else {
-      setNotifications(MOCK_NOTIFICATIONS);
+  const refreshStoreProfiles = async () => {
+    try {
+      const list = await api.auth.listStores();
+      setStoreProfiles(list.map(s => ({
+        storeId: s.id,
+        name: s.name,
+        logoUri: s.logoUrl,
+        createdAt: s.createdAt,
+      })));
+    } catch {
+      // Server not reachable — fall back to empty list
+      setStoreProfiles([]);
     }
+  };
 
-    setTrialStart(trialRaw);
-    setActiveStoreId(storeId);
+  const _loadStoreSettings = async (storeId: string) => {
+    try {
+      const store = await api.stores.get(storeId);
+      const settings: StoreSettings = {
+        name:      store.name ?? '',
+        address:   store.address ?? '',
+        phone:     store.phone ?? '',
+        email:     store.email ?? '',
+        vatNumber: store.vatNumber ?? '',
+        currency:  store.currency ?? 'LBP',
+        taxRate:   store.taxRate ?? 0,
+        language:  (store.language ?? 'en') as 'en' | 'ar',
+        theme:     (store.theme ?? 'light') as StoreSettings['theme'],
+        logoUri:   store.logoUrl,
+      };
+      setStoreSettings(settings);
+      applyRTL(settings.language);
+
+      // Store trial info in AsyncStorage (local only, not on server)
+      const trialRaw = await AsyncStorage.getItem(`store_trial_${storeId}`);
+      setTrialStart(trialRaw ?? store.createdAt);
+    } catch {}
+  };
+
+  const _loadNotifications = async (storeId: string) => {
+    try {
+      const list = await api.notifications.list();
+      setNotifications(list.map(n => ({
+        id: n.id, type: n.type as NotificationItem['type'],
+        title: n.title, body: n.body,
+        read: n.read, link: n.link, createdAt: n.createdAt,
+      })));
+    } catch {}
   };
 
   const applyRTL = (lang: 'en' | 'ar') => {
@@ -125,68 +163,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   const login = async (storeId: string, pin: string): Promise<boolean> => {
-    const storedPin = await AsyncStorage.getItem(key.pin(storeId)) ?? '1234';
-    if (pin !== storedPin) return false;
+    try {
+      const result = await api.auth.login(storeId, pin);
+      await api.saveToken(result.token);
+      const u: AppUser = {
+        id: result.user.id, name: result.user.name,
+        email: result.user.email, role: result.user.role as AppUser['role'],
+        storeId: result.user.storeId,
+      };
+      setUser(u);
+      setActiveStoreId(storeId);
+      setIsAuthenticated(true);
+      await AsyncStorage.setItem('active_store_id', storeId);
+      await AsyncStorage.setItem('current_user', JSON.stringify(u));
 
-    await _loadStoreData(storeId);
-    await AsyncStorage.setItem(key.activeStore(), storeId);
-    setIsAuthenticated(true);
-    setUser(MOCK_USER);
-    return true;
+      // Set trial start if not set
+      const trialRaw = await AsyncStorage.getItem(`store_trial_${storeId}`);
+      if (!trialRaw) {
+        await AsyncStorage.setItem(`store_trial_${storeId}`, result.store.createdAt);
+      }
+      setTrialStart(trialRaw ?? result.store.createdAt);
+
+      await _loadStoreSettings(storeId);
+      await _loadNotifications(storeId);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const logout = async () => {
+    await api.clearToken();
+    await AsyncStorage.multiRemove(['active_store_id', 'current_user']);
     setIsAuthenticated(false);
     setUser(null);
+    setNotifications([]);
   };
 
   // ── Onboarding / store creation ───────────────────────────────────────────
-  const completeOnboarding = async (storeId: string, pin: string, settings: Partial<StoreSettings>) => {
-    const mergedSettings: StoreSettings = { ...defaultSettings, ...settings };
-    const profile: StoreProfile = {
-      storeId,
-      name: mergedSettings.name || 'My Store',
-      logoUri: (mergedSettings as any).logoUri,
-      createdAt: new Date().toISOString(),
+  const completeOnboarding = async (_storeId: string, pin: string, settings: Partial<StoreSettings>) => {
+    const result = await api.auth.setup({
+      storeName: settings.name ?? 'My Store',
+      phone:     settings.phone ?? '',
+      email:     settings.email,
+      address:   settings.address,
+      currency:  settings.currency ?? 'LBP',
+      logoUri:   (settings as any).logoUri,
+      language:  settings.language,
+      pin,
+    });
+    await api.saveToken(result.token);
+
+    const u: AppUser = {
+      id: result.user.id, name: result.user.name,
+      email: result.user.email, role: result.user.role as AppUser['role'],
+      storeId: result.user.storeId,
     };
-
-    // Save profile to profiles list
-    const profilesRaw = await AsyncStorage.getItem(key.profiles());
-    const existing: StoreProfile[] = profilesRaw ? JSON.parse(profilesRaw) : [];
-    const updated = [...existing.filter(p => p.storeId !== storeId), profile];
-
-    const trialNow = new Date().toISOString();
-
-    await Promise.all([
-      AsyncStorage.setItem(key.profiles(), JSON.stringify(updated)),
-      AsyncStorage.setItem(key.pin(storeId), pin),
-      AsyncStorage.setItem(key.settings(storeId), JSON.stringify(mergedSettings)),
-      AsyncStorage.setItem(key.trial(storeId), trialNow),
-      AsyncStorage.setItem(key.activeStore(), storeId),
-    ]);
-
-    setStoreProfiles(updated);
-    setStoreSettings(mergedSettings);
-    setTrialStart(trialNow);
-    setActiveStoreId(storeId);
-    applyRTL(mergedSettings.language);
+    setUser(u);
+    setActiveStoreId(result.store.id);
     setIsAuthenticated(true);
-    setUser(MOCK_USER);
-  };
 
-  const addStoreProfile = async (profile: StoreProfile, pin: string, settings: StoreSettings) => {
-    const profilesRaw = await AsyncStorage.getItem(key.profiles());
-    const existing: StoreProfile[] = profilesRaw ? JSON.parse(profilesRaw) : [];
-    const updated = [...existing, profile];
+    await AsyncStorage.setItem('active_store_id', result.store.id);
+    await AsyncStorage.setItem('current_user', JSON.stringify(u));
+    await AsyncStorage.setItem(`store_trial_${result.store.id}`, result.store.createdAt);
+    setTrialStart(result.store.createdAt);
 
-    await Promise.all([
-      AsyncStorage.setItem(key.profiles(), JSON.stringify(updated)),
-      AsyncStorage.setItem(key.pin(profile.storeId), pin),
-      AsyncStorage.setItem(key.settings(profile.storeId), JSON.stringify(settings)),
-      AsyncStorage.setItem(key.trial(profile.storeId), new Date().toISOString()),
-    ]);
+    const s: StoreSettings = {
+      name: result.store.name, address: result.store.address ?? '',
+      phone: result.store.phone ?? '', email: result.store.email ?? '',
+      vatNumber: result.store.vatNumber ?? '', currency: result.store.currency,
+      taxRate: result.store.taxRate, language: result.store.language as 'en' | 'ar',
+      theme: result.store.theme as StoreSettings['theme'], logoUri: result.store.logoUrl,
+    };
+    setStoreSettings(s);
+    applyRTL(s.language);
 
-    setStoreProfiles(updated);
+    await refreshStoreProfiles();
   };
 
   // ── Settings ─────────────────────────────────────────────────────────────
@@ -194,45 +246,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!activeStoreId) return;
     const updated = { ...storeSettings, ...s };
     setStoreSettings(updated);
-    await AsyncStorage.setItem(key.settings(activeStoreId), JSON.stringify(updated));
-
-    // Update the profile name if store name changed
-    if (s.name) {
-      const profilesRaw = await AsyncStorage.getItem(key.profiles());
-      const profiles: StoreProfile[] = profilesRaw ? JSON.parse(profilesRaw) : [];
-      const updatedProfiles = profiles.map(p =>
-        p.storeId === activeStoreId ? { ...p, name: s.name! } : p
-      );
-      await AsyncStorage.setItem(key.profiles(), JSON.stringify(updatedProfiles));
-      setStoreProfiles(updatedProfiles);
-    }
-
+    await api.stores.update(activeStoreId, {
+      name: updated.name, address: updated.address, phone: updated.phone,
+      email: updated.email, vatNumber: updated.vatNumber, currency: updated.currency,
+      taxRate: updated.taxRate, language: updated.language, theme: updated.theme,
+      logoUrl: (updated as any).logoUri,
+    });
     if (s.language) applyRTL(s.language);
+    // Refresh store profile list (name may have changed)
+    await refreshStoreProfiles();
   };
 
   // ── Notifications ────────────────────────────────────────────────────────
-  const _saveNotifications = async (n: NotificationItem[]) => {
-    setNotifications(n);
-    if (activeStoreId) await AsyncStorage.setItem(key.notifications(activeStoreId), JSON.stringify(n));
+  const refreshNotifications = async () => {
+    if (!activeStoreId) return;
+    await _loadNotifications(activeStoreId);
   };
 
-  const markRead = (id: string) => {
-    const updated = notifications.map(n => n.id === id ? { ...n, read: true } : n);
-    _saveNotifications(updated);
+  const markRead = async (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    try { await api.notifications.markRead(id); } catch {}
   };
 
-  const markAllRead = () => {
-    const updated = notifications.map(n => ({ ...n, read: true }));
-    _saveNotifications(updated);
+  const markAllRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    try { await api.notifications.markAllRead(); } catch {}
   };
 
-  const addNotification = (n: Omit<NotificationItem, 'id' | 'createdAt'>) => {
-    const newItem: NotificationItem = {
-      ...n,
-      id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-      createdAt: new Date().toISOString(),
-    };
-    _saveNotifications([newItem, ...notifications]);
+  const addNotification = async (n: Omit<NotificationItem, 'id' | 'createdAt'>) => {
+    try {
+      const created = await api.notifications.create({
+        type: n.type, title: n.title, body: n.body, link: n.link,
+      });
+      const item: NotificationItem = {
+        id: created.id, type: created.type as NotificationItem['type'],
+        title: created.title, body: created.body,
+        read: created.read, link: created.link, createdAt: created.createdAt,
+      };
+      setNotifications(prev => [item, ...prev]);
+    } catch {
+      // Optimistic local-only fallback
+      const local: NotificationItem = {
+        ...n,
+        id: Date.now().toString(36),
+        createdAt: new Date().toISOString(),
+      };
+      setNotifications(prev => [local, ...prev]);
+    }
   };
 
   // ── Trial ─────────────────────────────────────────────────────────────────
@@ -254,8 +314,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={{
       isAuthenticated, activeStoreId, user, login, logout,
-      storeProfiles, addStoreProfile,
-      notifications, unreadCount, markRead, markAllRead, addNotification,
+      storeProfiles, refreshStoreProfiles,
+      notifications, unreadCount, markRead, markAllRead, addNotification, refreshNotifications,
       storeSettings, updateStoreSettings,
       isOnboardingComplete, completeOnboarding,
       trialDaysLeft, trialExpired,

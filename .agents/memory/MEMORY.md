@@ -1,0 +1,2 @@
+- [better-sqlite3 native build](better-sqlite3-build.md) — must be in onlyBuiltDependencies AND pnpm install --force to compile native addon
+- [bcryptjs version](bcryptjs-version.md) — bcryptjs@3.x creates temp dirs that crash Metro file watcher; use Node.js crypto.scryptSync instead

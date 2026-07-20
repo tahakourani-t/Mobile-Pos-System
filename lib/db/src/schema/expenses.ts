@@ -1,20 +1,20 @@
-import { pgTable, text, numeric, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { storesTable } from "./stores";
 
-export const expensesTable = pgTable("expenses", {
-  id:          uuid("id").primaryKey().defaultRandom(),
-  storeId:     uuid("store_id").notNull().references(() => storesTable.id, { onDelete: "cascade" }),
+export const expensesTable = sqliteTable("expenses", {
+  id:          text("id").primaryKey(),
+  storeId:     text("store_id").notNull().references(() => storesTable.id, { onDelete: "cascade" }),
   category:    text("category").notNull(),
-  amount:      numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  amount:      real("amount").notNull(),
   description: text("description"),
-  date:        timestamp("date").notNull().defaultNow(),
-  isRecurring: boolean("is_recurring").notNull().default(false),
-  createdAt:   timestamp("created_at").notNull().defaultNow(),
+  date:        text("date").notNull(),
+  isRecurring: integer("is_recurring", { mode: "boolean" }).notNull().default(false),
+  createdAt:   text("created_at").notNull(),
 });
 
-export const insertExpenseSchema = createInsertSchema(expensesTable).omit({ id: true, createdAt: true });
+export const insertExpenseSchema = createInsertSchema(expensesTable).omit({ createdAt: true });
 export const selectExpenseSchema = createSelectSchema(expensesTable);
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type Expense = typeof expensesTable.$inferSelect;

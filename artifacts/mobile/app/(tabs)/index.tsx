@@ -8,10 +8,10 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/contexts/AppContext';
 import { useData } from '@/contexts/DataContext';
 import { useTranslation } from '@/hooks/useTranslation';
-import { WEEKLY_SALES } from '@/constants/mockData';
 import StatCard from '@/components/StatCard';
 import OrderCard from '@/components/OrderCard';
 import SimpleChart from '@/components/SimpleChart';
+import type { WeeklySalesPoint } from '@/types';
 
 export default function DashboardScreen() {
   const colors = useColors();
@@ -29,6 +29,22 @@ export default function DashboardScreen() {
   }, [expenses]);
 
   const recentOrders = useMemo(() => orders.filter(o => o.status === 'completed').slice(0, 5), [orders]);
+
+  // Compute last 7 days of sales from real orders
+  const weeklySales = useMemo((): WeeklySalesPoint[] => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const result: WeeklySalesPoint[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayStr = d.toDateString();
+      const sales = orders
+        .filter(o => o.status === 'completed' && new Date(o.createdAt).toDateString() === dayStr)
+        .reduce((s, o) => s + o.total, 0);
+      result.push({ day: days[d.getDay()]!, sales });
+    }
+    return result;
+  }, [orders]);
 
   const quickActions = [
     { label: t('newSale'),   icon: 'cart-outline' as const,      route: '/(tabs)/pos',    color: colors.primary },
@@ -120,7 +136,7 @@ export default function DashboardScreen() {
       {/* Weekly Chart */}
       <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, marginHorizontal: 16 }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>{t('weeklySales')}</Text>
-        <SimpleChart data={WEEKLY_SALES} height={80} />
+        <SimpleChart data={weeklySales} height={80} />
       </View>
 
       {/* Recent Orders */}
